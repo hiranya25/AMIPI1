@@ -30,8 +30,28 @@
 
   <section>
     <h2>1. Executive Summary</h2>
-    <div class="score-grid"><div class="score"><b>{{ ai_summary.overall_health_score }}</b><small>out of 100</small></div><div><p class="lede">{{ ai_summary.executive_summary }}</p><p><strong>Audit scope:</strong> {{ result.analysis.methodology }}</p></div></div>
-    <div class="metrics">
+    <div class="score-grid">
+      <div class="score"><b>{{ ai_summary.overall_health_score }}</b><small>out of 100</small></div>
+      <div>
+        <p class="lede">{{ ai_summary.executive_summary }}</p>
+        <p><strong>Audit scope:</strong> {{ result.analysis.methodology }}</p>
+      </div>
+    </div>
+    
+    {% if ai_summary.top_priorities and ai_summary.top_priorities|length > 0 %}
+    <h3 style="margin-top: 24px; color: var(--red);">Top Priorities &amp; What Needs To Be Done</h3>
+    <ul style="padding-left: 20px;">
+      {% for priority in ai_summary.top_priorities %}
+      <li style="margin-bottom: 12px;">
+        <strong>{{ priority.issue }}</strong><br>
+        <span style="color: var(--muted); font-size: 11px;">Why it matters: {{ priority.why_it_matters }}</span><br>
+        <span style="color: var(--blue);"><strong>To do:</strong> {{ priority.recommendation }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <div class="metrics" style="margin-top: 24px;">
       <div class="metric"><b>{{ counts.critical }}</b><span>Critical findings</span></div><div class="metric"><b>{{ counts.medium }}</b><span>Medium findings</span></div><div class="metric"><b>{{ counts.low }}</b><span>Low findings</span></div><div class="metric"><b>{{ result.issues|length }}</b><span>Total findings</span></div>
     </div>
     <h3>Audit scope and crawl coverage</h3>
