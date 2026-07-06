@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Website Performance & SEO Audit — {{ result.site }}</title>
+<style>
+  :root{--ink:#172033;--muted:#617086;--line:#dce3ea;--navy:#102a43;--blue:#1976d2;--red:#b42318;--amber:#b54708;--green:#067647;--paper:#fff;--wash:#f4f7fa}
+  *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:var(--ink);background:#eef2f6;margin:0;font-size:12px;line-height:1.45}
+  .report{max-width:1000px;margin:24px auto;background:var(--paper);box-shadow:0 4px 24px #102a4318}
+  .cover{min-height:540px;padding:54px;background:linear-gradient(145deg,#102a43,#174f78);color:white;display:flex;flex-direction:column;justify-content:space-between}
+  .kicker{text-transform:uppercase;letter-spacing:2px;font-weight:bold;color:#8dd5ff}.cover h1{font-size:38px;line-height:1.08;margin:18px 0 12px;max-width:700px}.cover .site{font-size:20px;color:#d8efff}.cover-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;border-top:1px solid #ffffff55;padding-top:24px}.cover-meta strong{display:block;font-size:20px}.cover-meta span{color:#c6d7e5}
+  section{padding:30px 40px;border-bottom:1px solid var(--line)} h2{font-size:22px;color:var(--navy);margin:0 0 18px} h3{font-size:15px;margin:20px 0 8px;color:var(--navy)} p{margin:6px 0 12px}.lede{font-size:15px;color:#344054;line-height:1.65}
+  .score-grid{display:grid;grid-template-columns:170px 1fr;gap:28px;align-items:center}.score{width:150px;height:150px;border-radius:50%;border:14px solid var(--blue);display:flex;align-items:center;justify-content:center;flex-direction:column}.score b{font-size:46px;line-height:1}.score small{color:var(--muted)}
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.metric{background:var(--wash);border:1px solid var(--line);border-radius:6px;padding:14px}.metric b{font-size:23px;display:block;color:var(--navy)}.metric span{color:var(--muted)}
+  table{width:100%;border-collapse:collapse;margin:10px 0 18px;table-layout:fixed}th{background:var(--navy);color:#fff;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px}th,td{padding:8px;border:1px solid var(--line);vertical-align:top;word-wrap:break-word}tbody tr:nth-child(even){background:#f8fafc}
+  .badge{display:inline-block;border-radius:20px;padding:2px 8px;font-weight:bold;font-size:10px;text-transform:uppercase}.critical{background:#fee4e2;color:var(--red)}.medium{background:#fef0c7;color:var(--amber)}.low{background:#eaf2f8;color:#175cd3}.grade{font-size:20px;font-weight:bold}.grade-A,.grade-B{color:var(--green)}.grade-C{color:var(--amber)}.grade-D,.grade-F{color:var(--red)}
+  .priority{border-left:4px solid var(--blue);padding:10px 14px;margin:10px 0;background:var(--wash)}.priority strong{font-size:13px}.priority p{margin:3px 0}.urls{font-size:10px;color:var(--muted);margin-top:6px}.urls div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .category{page-break-inside:avoid;border:1px solid var(--line);border-radius:7px;padding:16px;margin:14px 0}.category-head{display:flex;justify-content:space-between;gap:15px}.category h3{margin:0 0 4px}.category-stats{white-space:nowrap}.note{background:#fff8e7;border-left:4px solid #fdb022;padding:12px;margin:10px 0}.limitations{color:var(--muted)}
+  .page-break{page-break-before:always}.small{font-size:10px}.footer{text-align:center;color:var(--muted);padding:20px}
+  @media print{body{background:#fff}.report{box-shadow:none;margin:0;max-width:none}.cover{min-height:96vh}.page-break{page-break-before:always}section{padding:24px 30px}.category{break-inside:avoid}}
+  @media(max-width:700px){.cover{padding:30px}.cover-meta,.metrics{grid-template-columns:1fr 1fr}.score-grid{grid-template-columns:1fr}.report{margin:0}section{padding:24px 18px}}
+</style>
+</head>
+<body><main class="report">
+  <div class="cover">
+    <div><div class="kicker">Comprehensive website audit</div><h1>Website Performance, SEO & Technical Health Report</h1><div class="site">{{ result.site }}</div></div>
+    <div class="cover-meta"><div><span>Overall health</span><strong>{{ ai_summary.overall_health_score }}/100</strong></div><div><span>Pages audited</span><strong>{{ result.pages_crawled }}</strong></div><div><span>Completed</span><strong>{{ result.finished_at[:10] }}</strong></div></div>
+  </div>
+
+  <section>
+    <h2>1. Executive Summary</h2>
+    <div class="score-grid"><div class="score"><b>{{ ai_summary.overall_health_score }}</b><small>out of 100</small></div><div><p class="lede">{{ ai_summary.executive_summary }}</p><p><strong>Audit scope:</strong> {{ result.analysis.methodology }}</p></div></div>
+    <div class="metrics">
+      <div class="metric"><b>{{ counts.critical }}</b><span>Critical findings</span></div><div class="metric"><b>{{ counts.medium }}</b><span>Medium findings</span></div><div class="metric"><b>{{ counts.low }}</b><span>Low findings</span></div><div class="metric"><b>{{ result.issues|length }}</b><span>Total findings</span></div>
+    </div>
+    <h3>Audit scope and crawl coverage</h3>
+    <table><tr><th>Pages crawled</th><th>Maximum crawl depth</th><th>Average response</th><th>Host audited</th></tr><tr><td>{{ result.pages_crawled }}</td><td>{{ result.analysis.scope.max_depth }}</td><td>{{ result.analysis.performance_kpis.average_response_ms }} ms</td><td>{{ result.analysis.scope.host }}</td></tr></table>
+  </section>
+
+  <!-- ============================================================
+       WEEKLY COMPARISON SECTIONS
+       ============================================================ -->
+
+  <section class="page-break">
+    <h2>2. Issues Fixed Since Last Run</h2>
+    {% if not diff.has_previous %}
+    <div class="note" style="border-left-color:#067647;background:#ecfdf5"><strong>First audit run.</strong> No previous report to compare against. This section will show resolved issues starting from the next run.</div>
+    {% elif diff.fixed|length == 0 %}
+    <div class="note" style="border-left-color:#fdb022;background:#fff8e7"><strong>No issues were fixed</strong> since the last audit. All previously identified issues are still present.</div>
+    {% else %}
+    <div class="note" style="border-left-color:#067647;background:#ecfdf5"><strong>✓ {{ diff.fixed|length }} issue{{ 's' if diff.fixed|length != 1 else '' }} resolved</strong> since the last audit. Great progress!</div>
+    <table>
+      <thead><tr><th style="width:12%">Severity</th><th style="width:20%">Category</th><th style="width:30%">Page</th><th>Issue (now fixed)</th></tr></thead>
+      <tbody>
+      {% for issue in diff.fixed[:30] %}
+      <tr><td><span class="badge {{ issue.severity }}">{{ issue.severity }}</span></td><td>{{ issue.category }}</td><td class="small">{{ issue.page_url }}</td><td>{{ issue.message }}{% if issue.details %}<br><span class="small">{{ issue.details }}</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if diff.fixed|length > 30 %}<p class="small">Showing 30 of {{ diff.fixed|length }} fixed issues.</p>{% endif %}
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>3. New Issues Identified</h2>
+    {% if not diff.has_previous %}
+    <div class="note" style="border-left-color:#b54708;background:#fff8e7"><strong>First audit run.</strong> All {{ diff.new|length }} issues below were identified in this initial scan.</div>
+    {% elif diff.new|length == 0 %}
+    <div class="note" style="border-left-color:#067647;background:#ecfdf5"><strong>No new issues detected.</strong> No regressions since the last audit — the site is stable.</div>
+    {% else %}
+    <div class="note" style="border-left-color:#b54708;background:#fff8e7"><strong>⚠ {{ diff.new|length }} new issue{{ 's' if diff.new|length != 1 else '' }} detected</strong> since the last audit. These require review.</div>
+    {% endif %}
+    {% if diff.new|length > 0 %}
+    <table>
+      <thead><tr><th style="width:12%">Severity</th><th style="width:20%">Category</th><th style="width:30%">Page</th><th>Issue</th></tr></thead>
+      <tbody>
+      {% for issue in diff.new[:50] %}
+      <tr><td><span class="badge {{ issue.severity }}">{{ issue.severity }}</span></td><td>{{ issue.category }}</td><td class="small">{{ issue.page_url }}</td><td>{{ issue.message }}{% if issue.details %}<br><span class="small">{{ issue.details }}</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if diff.new|length > 50 %}<p class="small">Showing 50 of {{ diff.new|length }} new issues.</p>{% endif %}
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>4. Critical Issues Requiring Attention</h2>
+    {% if diff.critical|length == 0 %}
+    <div class="note" style="border-left-color:#067647;background:#ecfdf5"><strong>✓ No critical issues found.</strong> The site has no severity-critical findings at this time.</div>
+    {% else %}
+    <div class="note" style="border-left-color:#b42318;background:#fee4e2"><strong>🔴 {{ diff.critical|length }} critical issue{{ 's' if diff.critical|length != 1 else '' }}</strong> require immediate attention. These may impact user experience, revenue, or search rankings.</div>
+    <table>
+      <thead><tr><th style="width:12%">Severity</th><th style="width:20%">Category</th><th style="width:30%">Page</th><th>Issue</th></tr></thead>
+      <tbody>
+      {% for issue in diff.critical[:30] %}
+      <tr><td><span class="badge critical">critical</span></td><td>{{ issue.category }}</td><td class="small">{{ issue.page_url }}</td><td>{{ issue.message }}{% if issue.details %}<br><span class="small">{{ issue.details }}</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if diff.critical|length > 30 %}<p class="small">Showing 30 of {{ diff.critical|length }} critical issues.</p>{% endif %}
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>5. Category Scorecard</h2>
+    <table><thead><tr><th style="width:22%">Category</th><th style="width:9%">Grade</th><th style="width:9%">Score</th><th style="width:12%">Findings</th><th style="width:12%">Pages</th><th>Business impact</th></tr></thead><tbody>
+    {% for cat in result.analysis.category_scores %}<tr><td><strong>{{ cat.name }}</strong></td><td><span class="grade grade-{{ cat.grade }}">{{ cat.grade }}</span></td><td>{{ cat.score }}/100</td><td>{{ cat.total }}</td><td>{{ cat.affected_pages }}</td><td>{{ cat.impact }}</td></tr>{% endfor %}
+    </tbody></table>
+  </section>
+
+  <section>
+    <h2>6. Performance Analysis</h2>
+    <div class="metrics"><div class="metric"><b>{{ result.analysis.performance_kpis.average_response_ms }}ms</b><span>Average response</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.median_response_ms }}ms</b><span>Median response</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.p95_response_ms }}ms</b><span>95th percentile</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.slow_pages }}</b><span>Pages ≥1 second</span></div></div>
+    <div class="metrics"><div class="metric"><b>{{ result.analysis.performance_kpis.average_page_kb }}KB</b><span>Average HTML payload</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.largest_page_kb }}KB</b><span>Largest HTML payload</span></div><div class="metric"><b>{{ result.stats.broken_pages }}</b><span>Failed page responses</span></div><div class="metric"><b>{{ result.analysis.scope.status_codes }}</b><span>Status distribution</span></div></div>
+    <div class="note"><strong>Interpretation:</strong> These are crawl-time response and HTML transfer measurements. They provide broad site coverage but are deliberately not presented as Core Web Vitals. Browser metrics such as LCP, CLS, INP, and TBT require a Lighthouse or Chrome UX measurement.</div>
+  </section>
+
+  <section class="page-break">
+    <h2>7. Prioritized Remediation Plan</h2>
+    <p>The plan groups recurring findings into implementable work rather than listing hundreds of duplicate rows.</p>
+    {% for phase in ['0–30 days','30–60 days','60–90 days'] %}
+      <h3>{{ phase }}</h3>
+      {% for item in result.analysis.action_plan if item.priority == phase %}
+      <div class="priority"><span class="badge {{ item.severity }}">{{ item.severity }}</span> <strong>{{ item.issue }}</strong><p><b>Why it matters:</b> {{ item.why_it_matters }}</p><p><b>Recommended action:</b> {{ item.recommended_action }}</p><p><b>Coverage:</b> {{ item.affected_count }} affected page(s)</p>{% if item.sample_urls %}<div class="urls">{% for url in item.sample_urls %}<div>{{ url }}</div>{% endfor %}</div>{% endif %}</div>
+      {% else %}<p>No items assigned to this phase.</p>{% endfor %}
+    {% endfor %}
+  </section>
+
+  <section class="page-break">
+    <h2>8. Detailed Findings by Category</h2>
+    {% for cat in result.analysis.category_scores %}
+    <div class="category">
+      <div class="category-head">
+        <div><h3>{{ cat.name }}</h3><div>{{ cat.impact }}</div></div>
+        <div class="category-stats"><span class="grade grade-{{ cat.grade }}">{{ cat.grade }}</span> &nbsp; {{ cat.total }} findings</div>
+      </div>
+      <p><strong>Recommended approach:</strong> {{ cat.recommendation }}</p>
+      <table>
+        <thead>
+          <tr><th style="width:12%">Severity</th><th style="width:31%">Affected page</th><th>Finding</th></tr>
+        </thead>
+        <tbody>
+          {% for issue in grouped[cat.name] %}
+          <tr>
+            <td><span class="badge {{ issue.severity }}">{{ issue.severity }}</span></td>
+            <td class="small">{{ issue.page_url }}</td>
+            <td>{{ issue.message }}{% if issue.details %}<br><span class="small">{{ issue.details }}</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="page-break">
+    <h2>9. Page-Level Audit Inventory</h2>
+    <p>Measured evidence for every crawled URL. This makes remediation and repeat-audit comparison possible.</p>
+    <table><thead><tr><th style="width:32%">URL</th><th style="width:7%">HTTP</th><th style="width:10%">Response</th><th style="width:9%">HTML KB</th><th style="width:7%">Words</th><th style="width:7%">H1</th><th>Page title</th></tr></thead><tbody>{% for page in result.page_details %}<tr><td class="small">{{ page.url }}</td><td>{{ page.status_code or 'Error' }}</td><td>{{ page.response_time_ms }}ms</td><td>{{ page.size_kb }}</td><td>{{ page.word_count }}</td><td>{{ page.h1_count }}</td><td>{{ page.title or 'Missing' }}</td></tr>{% endfor %}</tbody></table>
+  </section>
+
+  <section>
+    <h2>10. Methodology &amp; Limitations</h2><p>{{ result.analysis.methodology }}</p><ul class="limitations">{% for item in result.analysis.limitations %}<li>{{ item }}</li>{% endfor %}</ul><p><strong>Run window:</strong> {{ result.started_at }} to {{ result.finished_at }}</p>
+  </section>
+  <div class="footer">Generated automatically by AI Website Health Monitor · {{ result.site }}</div>
+</main></body></html>

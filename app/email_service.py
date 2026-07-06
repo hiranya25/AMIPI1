@@ -1,0 +1,59 @@
+"""
+Email Delivery Service
+-------------------------
+Sends the generated HTML report to EMAIL_RECIPIENTS via SMTP
+(works with Gmail/Outlook/any standard SMTP+STARTTLS provider).
+"""
+from __future__ import annotations
+import smtplib
+import logging
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+from app.config import settings
+
+logger = logging.getLogger("email_service")
+
+
+from email.mime.application import MIMEApplication
+import datetime
+import os
+
+def send_report(html_body: str, subject: str | None = None) -> bool:
+    return send_report_with_pdf(html_body, subject, None)
+
+def send_report_with_pdf(html_body: str, subject: str | None, pdf_path: str | None) -> bool:
+    if not settings.SMTP_HOST or not settings.EMAIL_RECIPIENTS:
+        logger.warning("SMTP not configured or no recipients set — skipping email send.")
+        return False
+
+    subject = subject or "Weekly Website Health Report — AMIPI"
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
+    msg["From"] = settings.EMAIL_FROM or settings.SMTP_USERNAME
+    msg["To"] = ", ".join(settings.EMAIL_RECIPIENTS)
+    
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(html_body, "html"))
+    msg.attach(alt)
+
+    if pdf_path and os.path.exists(pdf_path):
+        with open(pdf_path, "rb") as f:
+            pdf_attachment = MIMEApplication(f.read(), _subtype="pdf")
+            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            filename = f"{date_str} Amipi Health Check.pdf"
+            pdf_attachment.add_header('Content-Disposition', 'attachment', filename=filename)
+            msg.attach(pdf_attachment)
+
+    try:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as server:
+            server.starttls()
+            if settings.SMTP_USERNAME:
+                server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            server.sendmail(msg["From"], settings.EMAIL_RECIPIENTS, msg.as_string())
+        logger.info("Report email sent to %s", settings.EMAIL_RECIPIENTS)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to send report email: %s", exc)
+        return False
