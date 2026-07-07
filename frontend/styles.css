@@ -35,6 +35,7 @@
 
 * { box-sizing: border-box; }
 html { color-scheme: dark; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;

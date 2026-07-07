@@ -145,7 +145,12 @@ def trigger_email():
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
     subject = f"{date_str} Amipi Health Check"
     
-    success = send_report_with_attachments(html_body, subject, [pdf_path])
+    attachments = [pdf_path]
+    csv_path = os.path.join(settings.REPORTS_DIR, "latest.csv")
+    if os.path.exists(csv_path):
+        attachments.append(csv_path)
+    
+    success = send_report_with_attachments(html_body, subject, attachments)
     if success:
         return {"status": "sent"}
     else:

@@ -68,6 +68,7 @@ def generate(result: AuditResult, diff: dict | None = None) -> dict:
         diff = {"has_previous": False, "fixed": [], "new": [], "critical": []}
 
     csv_path = os.path.join(settings.REPORTS_DIR, f"amipi_findings_{ts}.csv")
+    latest_csv_path = os.path.join(settings.REPORTS_DIR, "latest.csv")
     with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(["Urgency", "Category", "Issue", "Affected URL", "Details", "Recommended Action"])
@@ -80,6 +81,10 @@ def generate(result: AuditResult, diff: dict | None = None) -> dict:
                 issue.details or "",
                 issue.how_to_fix or ""
             ])
+            
+    # Also write a latest.csv copy
+    import shutil
+    shutil.copy2(csv_path, latest_csv_path)
     
     csv_filename = os.path.basename(csv_path)
 

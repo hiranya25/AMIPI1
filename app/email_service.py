@@ -35,8 +35,20 @@ def send_report_with_attachments(html_body: str, subject: str | None, attachment
     msg["From"] = settings.EMAIL_FROM or settings.SMTP_USERNAME
     msg["To"] = ", ".join(settings.EMAIL_RECIPIENTS)
     
+    # Send a short body message instead of the full HTML report
+    short_body = (
+        "<html><body>"
+        "<p>Hello,</p>"
+        "<p>Please find the latest Weekly Website Health Report for AMIPI attached.</p>"
+        "<p>Attachments:<br>"
+        "1. <b>PDF Report</b> (Executive Summary, Scorecard, and Prioritized Fixes)<br>"
+        "2. <b>CSV Spreadsheet</b> (Complete list of all URL-level technical findings)</p>"
+        "<br><p><i>Generated automatically by the AI Website Health Monitor.</i></p>"
+        "</body></html>"
+    )
+    
     alt = MIMEMultipart("alternative")
-    alt.attach(MIMEText(html_body, "html"))
+    alt.attach(MIMEText(short_body, "html"))
     msg.attach(alt)
 
     if attachments:

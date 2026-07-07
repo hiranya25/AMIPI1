@@ -94,7 +94,9 @@ def run_full_audit(send_email: bool = True) -> AuditResult:
         if "csv_path" in report and report["csv_path"]:
             attachments.append(report["csv_path"])
 
-        send_report_with_attachments(report["html"], subject=subject, attachments=attachments)
+        success = send_report_with_attachments(report["html"], subject=subject, attachments=attachments)
+        if not success:
+            raise RuntimeError("Email delivery failed after maximum retries.")
 
     return result
 
