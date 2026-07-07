@@ -11,8 +11,9 @@ Ubersuggest, and Screaming Frog by hand.
   origin (no build step, no framework — open `uvicorn app.main:app` and go)
 - **Crawler:** `requests` + `BeautifulSoup` (static HTML), optional
   Playwright fallback for JS-rendered pages (`USE_PLAYWRIGHT_FOR_JS=true`)
-- **AI analysis:** Groq's free-tier API (`llama-3.3-70b-versatile`,
-  OpenAI-compatible) — get a free key at https://console.groq.com/keys
+- **PDF Generation:** `playwright` (Chromium) used for generating PDF reports on the fly
+- **AI analysis:** NVIDIA Nemotron API (`nvidia/nemotron-3-ultra-550b-a55b`)
+  via OpenAI-compatible streaming API. Handles reasoning tokens and parses JSON output.
 - **Scheduler:** APScheduler (weekly cron, default Monday 6:00 AM)
 - **Email:** stdlib `smtplib` (works with Gmail/Outlook/any SMTP+STARTTLS)
 
@@ -29,9 +30,11 @@ app/
     alt_tags.py        missing image ALT attributes
     seo_checks.py      robots.txt / sitemap / HTTPS / structured data
     performance.py     response time, payload size, render-blocking scripts
-  ai_analysis.py     Groq call -> executive summary + priorities
+  ai_analysis.py     NVIDIA Nemotron call -> executive summary + priorities
   report_generator.py  renders HTML/JSON report, saves to reports/
-  email_service.py   sends the report via SMTP
+  pdf_generator.py   converts the HTML report to a PDF via Playwright
+  issue_diff.py      diffs current run vs previous run (fixed/new issues)
+  email_service.py   sends the HTML report + PDF attachment via SMTP
   pipeline.py        orchestrates: crawl -> audits -> AI -> report -> email
   scheduler.py        weekly APScheduler job
   templates/report.html  email report layout
@@ -39,7 +42,7 @@ frontend/
   index.html          dashboard shell (empty / running / error / report states)
   styles.css           dark instrument-panel theme, faceted "gem-cut" health score
   app.js               fetch + poll the API, render findings, filter by category
-reports/             generated reports land here (latest.html / latest.json)
+reports/             generated reports land here (latest.html / latest.json / latest.pdf)
 requirements.txt
 .env.example         copy to .env and fill in your values
 ```
@@ -51,11 +54,11 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Only needed if USE_PLAYWRIGHT_FOR_JS=true:
+# Playwright is required for PDF generation (and optionally JS crawling)
 playwright install chromium
 
 cp .env.example .env
-# edit .env: set GROQ_API_KEY, SMTP_*, EMAIL_RECIPIENTS, etc.
+# edit .env: set AI_API_KEY, SMTP_*, EMAIL_RECIPIENTS, etc.
 ```
 
 ## Run
@@ -82,6 +85,8 @@ curl -X POST "http://localhost:8000/audit/run?send_email=false"
 curl "http://localhost:8000/audit/status/<job_id>"
 curl "http://localhost:8000/audit/latest"          # JSON
 curl "http://localhost:8000/audit/latest/html"      # emailed-style HTML report
+curl "http://localhost:8000/audit/latest/pdf"       # downloads the PDF version
+curl -X POST "http://localhost:8000/audit/email"    # explicitly triggers the email w/ PDF
 ```
 
 ### Run the pipeline directly (no server), useful for local testing
@@ -90,9 +95,9 @@ python3 -m app.pipeline
 ```
 
 ## Notes / current limitations
-- **AI analysis has a safe fallback:** if `GROQ_API_KEY` is unset or the
-  API call fails, a rule-based summary is generated instead so the weekly
-  report — and the dashboard — never break.
+- **AI analysis has a safe fallback:** if `AI_API_KEY` is unset or the
+  API call times out (the 550B model reasoning can be slow), a rule-based
+  summary is generated instead so the weekly report — and the dashboard — never break.
 - **Performance checks are lightweight** (response time, payload size,
   render-blocking script count) rather than a full Lighthouse run — this
   avoids requiring headless Chrome for every page. Swapping in

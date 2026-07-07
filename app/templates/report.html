@@ -25,13 +25,13 @@
 <body><main class="report">
   <div class="cover">
     <div><div class="kicker">Comprehensive website audit</div><h1>Website Performance, SEO & Technical Health Report</h1><div class="site">{{ result.site }}</div></div>
-    <div class="cover-meta"><div><span>Overall health</span><strong>{{ ai_summary.overall_health_score }}/100</strong></div><div><span>Pages audited</span><strong>{{ result.pages_crawled }}</strong></div><div><span>Completed</span><strong>{{ result.finished_at[:10] }}</strong></div></div>
+    <div class="cover-meta"><div><span>Overall health</span><strong>{{ result.analysis.overall_score }}/100</strong></div><div><span>Pages audited</span><strong>{{ result.pages_crawled }}</strong></div><div><span>Completed</span><strong>{{ result.finished_at[:10] }}</strong></div></div>
   </div>
 
   <section>
     <h2>1. Executive Summary</h2>
     <div class="score-grid">
-      <div class="score"><b>{{ ai_summary.overall_health_score }}</b><small>out of 100</small></div>
+      <div class="score"><b>{{ result.analysis.overall_score }}</b><small>Grade {{ result.analysis.overall_grade }}</small></div>
       <div>
         <p class="lede">{{ ai_summary.executive_summary }}</p>
         <p><strong>Audit scope:</strong> {{ result.analysis.methodology }}</p>
@@ -105,7 +105,29 @@
   </section>
 
   <section>
-    <h2>4. Critical Issues Requiring Attention</h2>
+    <h2>4. Persisting Issues</h2>
+    {% if not diff.has_previous %}
+    <div class="note" style="border-left-color:#b54708;background:#fff8e7"><strong>First audit run.</strong> Cannot determine persisting issues yet.</div>
+    {% elif diff.persisting|length == 0 %}
+    <div class="note" style="border-left-color:#067647;background:#ecfdf5"><strong>No persisting issues detected.</strong></div>
+    {% else %}
+    <div class="note" style="border-left-color:#fdb022;background:#fff8e7"><strong>{{ diff.persisting|length }} issue{{ 's' if diff.persisting|length != 1 else '' }} persisting</strong> from the last audit. These should be addressed.</div>
+    {% endif %}
+    {% if diff.persisting|length > 0 %}
+    <table>
+      <thead><tr><th style="width:12%">Severity</th><th style="width:20%">Category</th><th style="width:30%">Page</th><th>Issue</th></tr></thead>
+      <tbody>
+      {% for issue in diff.persisting[:30] %}
+      <tr><td><span class="badge {{ issue.severity }}">{{ issue.severity }}</span></td><td>{{ issue.category }}</td><td class="small">{{ issue.page_url }}</td><td>{{ issue.message }}{% if issue.details %}<br><span class="small">{{ issue.details }}</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if diff.persisting|length > 30 %}<p class="small">Showing 30 of {{ diff.persisting|length }} persisting issues.</p>{% endif %}
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>5. Critical Issues Requiring Attention</h2>
     {% if diff.critical|length == 0 %}
     <div class="note" style="border-left-color:#067647;background:#ecfdf5"><strong>✓ No critical issues found.</strong> The site has no severity-critical findings at this time.</div>
     {% else %}
@@ -123,17 +145,10 @@
   </section>
 
   <section>
-    <h2>5. Category Scorecard</h2>
+    <h2>6. Category Scorecard</h2>
     <table><thead><tr><th style="width:22%">Category</th><th style="width:9%">Grade</th><th style="width:9%">Score</th><th style="width:12%">Findings</th><th style="width:12%">Pages</th><th>Business impact</th></tr></thead><tbody>
-    {% for cat in result.analysis.category_scores %}<tr><td><strong>{{ cat.name }}</strong></td><td><span class="grade grade-{{ cat.grade }}">{{ cat.grade }}</span></td><td>{{ cat.score }}/100</td><td>{{ cat.total }}</td><td>{{ cat.affected_pages }}</td><td>{{ cat.impact }}</td></tr>{% endfor %}
+    {% for cat in result.analysis.category_scores %}<tr><td><strong>{{ cat.name }}</strong>{% if cat.custom_metrics %}<br><span style="font-size:0.8em;color:#64748b;">{% for k, v in cat.custom_metrics.items() %}{{ k }}: {{ v }}{% if not loop.last %} | {% endif %}{% endfor %}</span>{% endif %}</td><td><span class="grade grade-{{ cat.grade }}">{{ cat.grade }}</span></td><td>{{ cat.score }}/100</td><td>{{ cat.total if not cat.custom_metrics else '-' }}</td><td>{{ cat.affected_pages if not cat.custom_metrics else '-' }}</td><td>{{ cat.impact }}</td></tr>{% endfor %}
     </tbody></table>
-  </section>
-
-  <section>
-    <h2>6. Performance Analysis</h2>
-    <div class="metrics"><div class="metric"><b>{{ result.analysis.performance_kpis.average_response_ms }}ms</b><span>Average response</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.median_response_ms }}ms</b><span>Median response</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.p95_response_ms }}ms</b><span>95th percentile</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.slow_pages }}</b><span>Pages ≥1 second</span></div></div>
-    <div class="metrics"><div class="metric"><b>{{ result.analysis.performance_kpis.average_page_kb }}KB</b><span>Average HTML payload</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.largest_page_kb }}KB</b><span>Largest HTML payload</span></div><div class="metric"><b>{{ result.stats.broken_pages }}</b><span>Failed page responses</span></div><div class="metric"><b>{{ result.analysis.scope.status_codes }}</b><span>Status distribution</span></div></div>
-    <div class="note"><strong>Interpretation:</strong> These are crawl-time response and HTML transfer measurements. They provide broad site coverage but are deliberately not presented as Core Web Vitals. Browser metrics such as LCP, CLS, INP, and TBT require a Lighthouse or Chrome UX measurement.</div>
   </section>
 
   <section class="page-break">
@@ -146,7 +161,7 @@
       {% else %}<p>No items assigned to this phase.</p>{% endfor %}
     {% endfor %}
   </section>
-
+  
   <section class="page-break">
     <h2>8. Detailed Findings by Category</h2>
     {% for cat in result.analysis.category_scores %}
@@ -158,14 +173,22 @@
       <p><strong>Recommended approach:</strong> {{ cat.recommendation }}</p>
       <table>
         <thead>
-          <tr><th style="width:12%">Severity</th><th style="width:31%">Affected page</th><th>Finding</th></tr>
+          <tr><th style="width:12%">Severity</th><th style="width:15%">Affected pages</th><th style="width:38%">Finding & Samples</th><th>Recommended Fix</th></tr>
         </thead>
         <tbody>
           {% for issue in grouped[cat.name] %}
           <tr>
             <td><span class="badge {{ issue.severity }}">{{ issue.severity }}</span></td>
-            <td class="small">{{ issue.page_url }}</td>
-            <td>{{ issue.message }}{% if issue.details %}<br><span class="small">{{ issue.details }}</span>{% endif %}</td>
+            <td><strong>{{ issue.total_affected }}</strong></td>
+            <td class="small">
+              <strong>{{ issue.message }}</strong>{% if issue.details %}<br><span style="color:#64748b;">{{ issue.details }}</span>{% endif %}
+              <div style="margin-top:4px;">
+                {% for url in issue.sample_urls %}
+                <div style="word-break: break-all;">{{ url }}</div>
+                {% endfor %}
+              </div>
+            </td>
+            <td class="small">{{ issue.how_to_fix }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -175,13 +198,20 @@
   </section>
 
   <section class="page-break">
-    <h2>9. Page-Level Audit Inventory</h2>
-    <p>Measured evidence for every crawled URL. This makes remediation and repeat-audit comparison possible.</p>
-    <table><thead><tr><th style="width:32%">URL</th><th style="width:7%">HTTP</th><th style="width:10%">Response</th><th style="width:9%">HTML KB</th><th style="width:7%">Words</th><th style="width:7%">H1</th><th>Page title</th></tr></thead><tbody>{% for page in result.page_details %}<tr><td class="small">{{ page.url }}</td><td>{{ page.status_code or 'Error' }}</td><td>{{ page.response_time_ms }}ms</td><td>{{ page.size_kb }}</td><td>{{ page.word_count }}</td><td>{{ page.h1_count }}</td><td>{{ page.title or 'Missing' }}</td></tr>{% endfor %}</tbody></table>
+    <h2>9. Performance Analysis</h2>
+    <div class="metrics"><div class="metric"><b>{{ result.analysis.performance_kpis.average_response_ms }}ms</b><span>Average response</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.median_response_ms }}ms</b><span>Median response</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.p95_response_ms }}ms</b><span>95th percentile</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.slow_pages }}</b><span>Pages ≥1 second</span></div></div>
+    <div class="metrics"><div class="metric"><b>{{ result.analysis.performance_kpis.average_page_kb }}KB</b><span>Average HTML payload</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.largest_page_kb }}KB</b><span>Largest HTML payload</span></div><div class="metric"><b>{{ result.stats.broken_pages }}</b><span>Failed page responses</span></div><div class="metric"><b>{{ result.analysis.scope.status_codes }}</b><span>Status distribution</span></div></div>
+    <div class="note"><strong>Interpretation:</strong> These are crawl-time response and HTML transfer measurements. They provide broad site coverage but are deliberately not presented as Core Web Vitals. Browser metrics such as LCP, CLS, INP, and TBT require a Lighthouse or Chrome UX measurement.</div>
   </section>
 
-  <section>
-    <h2>10. Methodology &amp; Limitations</h2><p>{{ result.analysis.methodology }}</p><ul class="limitations">{% for item in result.analysis.limitations %}<li>{{ item }}</li>{% endfor %}</ul><p><strong>Run window:</strong> {{ result.started_at }} to {{ result.finished_at }}</p>
+  <section class="page-break">
+    <h2>10. Complete Findings Inventory (Export)</h2>
+    <p>The full list of all <strong>{{ result.issues|length }}</strong> findings across every single URL has been moved to a separate spreadsheet attachment to keep this document concise.</p>
+    <p><strong>Full findings ({{ result.issues|length }} rows): see attached <code>{{ csv_filename }}</code></strong></p>
+  </section>
+
+  <section class="page-break">
+    <h2>11. Methodology &amp; Limitations</h2><p>{{ result.analysis.methodology }}</p><ul class="limitations">{% for item in result.analysis.limitations %}<li>{{ item }}</li>{% endfor %}</ul><p><strong>Run window:</strong> {{ result.started_at }} to {{ result.finished_at }}</p>
   </section>
   <div class="footer">Generated automatically by AI Website Health Monitor · {{ result.site }}</div>
 </main></body></html>

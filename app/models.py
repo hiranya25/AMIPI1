@@ -5,6 +5,7 @@ AI analysis layer, and report generator.
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -25,18 +26,22 @@ class PageRecord:
 class Issue:
     """A single finding produced by an audit module."""
     category: str          # e.g. "Broken Links", "Metadata", "ALT Tags", "SEO", "Performance"
+    issue_type: str        # stable identifier, e.g. "missing_meta_description"
     severity: str           # "critical" | "medium" | "low"  (AI may re-classify later)
     page_url: str
     message: str
     details: Optional[str] = None
+    how_to_fix: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
             "category": self.category,
+            "issue_type": self.issue_type,
             "severity": self.severity,
             "page_url": self.page_url,
             "message": self.message,
             "details": self.details,
+            "how_to_fix": self.how_to_fix,
         }
 
 
@@ -58,6 +63,61 @@ class AuditResult:
         for issue in self.issues:
             grouped.setdefault(issue.category, []).append(issue)
         return grouped
+
+    def grouped_issues_by_category(self) -> dict[str, list[dict]]:
+        """Groups issues by (category, issue_type) and aggregates URL variants."""
+        grouped = {}
+        for issue in self.issues:
+            cat = issue.category
+            if cat not in grouped:
+                grouped[cat] = {}
+            
+            # Group by issue type
+            itype = issue.issue_type
+            if itype not in grouped[cat]:
+                grouped[cat][itype] = {
+                    "severity": issue.severity,
+                    "message": issue.message,
+                    "how_to_fix": issue.how_to_fix,
+                    "details": issue.details,
+                    "base_urls": {} # map of base_url -> set of full urls
+                }
+            
+            # Normalize URL for grouping variants
+            parsed = urlparse(issue.page_url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            
+            base_group = grouped[cat][itype]["base_urls"]
+            if base_url not in base_group:
+                base_group[base_url] = set()
+            base_group[base_url].add(issue.page_url)
+
+        # Flatten for the template
+        result = {}
+        for cat, types in grouped.items():
+            result[cat] = []
+            for itype, data in types.items():
+                total_urls = sum(len(urls) for urls in data["base_urls"].values())
+                
+                # Take top 5 base URLs as examples
+                example_bases = list(data["base_urls"].keys())[:5]
+                sample_urls = []
+                for base in example_bases:
+                    variants = len(data["base_urls"][base])
+                    if variants > 1:
+                        sample_urls.append(f"{base} (and {variants-1} variant{'s' if variants > 2 else ''})")
+                    else:
+                        sample_urls.append(base)
+                
+                result[cat].append({
+                    "severity": data["severity"],
+                    "message": data["message"],
+                    "how_to_fix": data["how_to_fix"],
+                    "details": data["details"],
+                    "total_affected": total_urls,
+                    "sample_urls": sample_urls
+                })
+        return result
 
     def issue_counts_by_severity(self) -> dict[str, int]:
         counts = {"critical": 0, "medium": 0, "low": 0}

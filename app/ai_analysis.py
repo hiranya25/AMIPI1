@@ -31,12 +31,11 @@ from an automated website crawl. Your job:
 1. Write a 3-4 sentence plain-English executive summary a non-technical manager can understand.
 2. Re-check the severity of each issue category is reasonable (critical / medium / low).
 3. Produce a "top_priorities" list of at most 8 items: the highest-impact fixes first, each with
-   a one-line recommendation.
+   a one-line recommendation. Ensure there are NO duplicate issue types in this list.
 
 Respond ONLY with valid JSON in exactly this shape, no extra commentary:
 {
   "executive_summary": "...",
-  "overall_health_score": <integer 0-100>,
   "top_priorities": [
     {"issue": "...", "why_it_matters": "...", "recommendation": "..."}
   ]
@@ -63,69 +62,92 @@ def analyze(issues: list[Issue], site: str, pages_crawled: int) -> dict | None:
     if client is None:
         return _fallback_summary(issues, pages_crawled)
 
-    # Keep the payload compact: send counts + a representative sample per category,
-    # not every single issue (keeps the request small and fast).
-    by_category: dict[str, list[Issue]] = {}
+    # Group by issue_type to keep the payload strictly minimal and avoid context limits
+    by_issue_type = {}
     for issue in issues:
-        by_category.setdefault(issue.category, []).append(issue)
+        by_issue_type.setdefault(issue.issue_type, []).append(issue)
 
     sample_payload = {
         "site": site,
         "pages_crawled": pages_crawled,
         "total_issues": len(issues),
-        "categories": {
-            cat: {
+        "unique_issue_types": len(by_issue_type),
+        "issue_samples": [
+            {
+                "issue_type": itype,
+                "category": items[0].category,
+                "severity": items[0].severity,
                 "count": len(items),
-                "examples": [i.to_dict() for i in items[:5]],
+                "example_message": items[0].message
             }
-            for cat, items in by_category.items()
-        },
+            for itype, items in by_issue_type.items()
+        ]
     }
 
-    try:
-        logger.info("Calling NVIDIA Nemotron API for AI analysis...")
-        # Use streaming to handle Nemotron's thinking/reasoning output
-        completion = client.chat.completions.create(
-            model=settings.AI_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(sample_payload)},
-            ],
-            temperature=0.3,
-            top_p=0.9,
-            max_tokens=2048,
-            stream=True,
-        )
+    import time
+    for attempt in range(3):
+        try:
+            logger.info("Calling NVIDIA Nemotron API for AI analysis (attempt %d/3)...", attempt + 1)
+            completion = client.chat.completions.create(
+                model=settings.AI_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": json.dumps(sample_payload)},
+                ],
+                temperature=0.3,
+                top_p=0.9,
+                max_tokens=2048,
+                stream=True,
+            )
 
-        # Collect the streamed response, separating reasoning from content
-        content_parts = []
-        for chunk in completion:
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            # Skip reasoning_content (internal thinking) — we only want the final answer
-            if delta.content is not None:
-                content_parts.append(delta.content)
+            content_parts = []
+            for chunk in completion:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if delta.content is not None:
+                    content_parts.append(delta.content)
 
-        content = "".join(content_parts).strip()
-        logger.info("AI analysis response received (%d chars)", len(content))
-        # Some models wrap JSON in ```json fences — strip if present.
-        content = content.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        return json.loads(content)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("AI analysis call failed (falling back to rule-based): %s", exc)
-        return _fallback_summary(issues, pages_crawled)
+            content = "".join(content_parts).strip()
+            content = content.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            return json.loads(content)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("AI analysis call failed (attempt %d/3): %s", attempt + 1, exc)
+            if attempt < 2:
+                time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s
+            else:
+                logger.error("AI analysis exhausted retries. Falling back to rule-based.")
+                return _fallback_summary(issues, pages_crawled)
+
 
 
 def _fallback_summary(issues: list[Issue], pages_crawled: int) -> dict:
     """Rule-based summary used if the AI call is unavailable/fails,
     so the pipeline (and weekly email) never breaks."""
+    from app.detailed_analysis import CATEGORY_GUIDANCE
+
     counts = {"critical": 0, "medium": 0, "low": 0}
     for i in issues:
         counts[i.severity] = counts.get(i.severity, 0) + 1
 
     score = max(0, 100 - counts["critical"] * 5 - counts["medium"] * 2 - counts["low"] * 1)
     top = sorted(issues, key=lambda i: {"critical": 0, "medium": 1, "low": 2}[i.severity])[:8]
+
+    top_priorities = []
+    seen_types = set()
+    for i in top:
+        if i.issue_type in seen_types:
+            continue
+        seen_types.add(i.issue_type)
+        impact, default_fix = CATEGORY_GUIDANCE.get(i.category, ("Website quality", "Review and resolve."))
+        recommendation = i.details if i.details and i.category in {"Accessibility", "Content", "Security", "URL Structure", "Social Metadata"} else default_fix
+        top_priorities.append({
+            "issue": i.message,
+            "why_it_matters": impact,
+            "recommendation": recommendation
+        })
+        if len(top_priorities) >= 8:
+            break
 
     return {
         "executive_summary": (
@@ -134,8 +156,5 @@ def _fallback_summary(issues: list[Issue], pages_crawled: int) -> dict:
             "AI summarization was unavailable for this run, so this is a rule-based summary."
         ),
         "overall_health_score": score,
-        "top_priorities": [
-            {"issue": i.message, "why_it_matters": i.category, "recommendation": "Review and fix."}
-            for i in top
-        ],
+        "top_priorities": top_priorities,
     }

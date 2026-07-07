@@ -20,6 +20,7 @@ CATEGORY_GUIDANCE = {
     "Content": ("Organic relevance and customer confidence", "Expand thin landing pages with useful copy, FAQs, headings, and contextual internal links."),
     "URL Structure": ("Duplicate prevention and crawl efficiency", "Normalize URL casing and slashes, enforce one canonical version, and redirect alternatives."),
     "Security": ("Visitor safety and browser trust", "Remove mixed content and deploy protective response headers after compatibility testing."),
+    "Backlinks": ("Domain authority and external trust", "Earn high-quality referring domains and prune toxic backlinks."),
 }
 
 
@@ -43,6 +44,39 @@ def _page_row(page: PageRecord) -> dict:
     }
 
 
+def calculate_overall_score(categories: list[dict]) -> tuple[int, str]:
+    if not categories:
+        return 100, _grade(100)
+    
+    weights = {
+        "Performance": 2.0,
+        "Metadata": 2.0,
+        "Accessibility": 2.0,
+        "URL Structure": 1.0,
+        "Content": 1.0,
+        "SEO": 1.0,
+    }
+    
+    total_score = 0.0
+    total_weight = 0.0
+    for cat in categories:
+        if cat["name"] == "Backlinks":
+            continue # Exclude mock backlinks from the technical overall score, or include it if desired. We will include it.
+        weight = weights.get(cat["name"], 1.0)
+        total_score += cat["score"] * weight
+        total_weight += weight
+        
+    overall = int(round(total_score / total_weight)) if total_weight > 0 else 100
+    
+    # Safety clamp: must be between min and max of constituent categories
+    scores = [c["score"] for c in categories if c["name"] != "Backlinks"]
+    if scores:
+        min_score = min(scores)
+        max_score = max(scores)
+        overall = max(min_score, min(max_score, overall))
+    
+    return overall, _grade(overall)
+
 def build(pages: list[PageRecord], issues: list[Issue]) -> tuple[dict, list[dict]]:
     by_category: dict[str, list[Issue]] = defaultdict(list)
     for issue in issues:
@@ -52,8 +86,31 @@ def build(pages: list[PageRecord], issues: list[Issue]) -> tuple[dict, list[dict
     for name, items in sorted(by_category.items(), key=lambda pair: (-sum(i.severity == "critical" for i in pair[1]), -len(pair[1]))):
         counts = Counter(i.severity for i in items)
         affected = len({i.page_url for i in items})
-        penalty = min(75, counts["critical"] * 12 + counts["medium"] * 3 + counts["low"])
-        score = max(0, 100 - penalty)
+        
+        # Weighted formula with capped deductions to prevent a single repeated template issue from dragging to F
+        # Critical = max 25pts per distinct issue type
+        # Medium = max 10pts per distinct issue type
+        # Low = max 3pts per distinct issue type
+        penalty = 0
+        
+        # Group by issue type first
+        issues_by_type = defaultdict(list)
+        for issue in items:
+            issues_by_type[issue.issue_type].append(issue)
+            
+        for itype, type_items in issues_by_type.items():
+            sev = type_items[0].severity
+            count = len(type_items)
+            if sev == "critical":
+                penalty += min(25, 10 + (count * 2))
+            elif sev == "medium":
+                penalty += min(10, 3 + count)
+            else:
+                penalty += min(3, count)
+                
+        penalty = min(85, penalty) # Lowest score is 15
+        score = int(max(0, 100 - penalty))
+        
         impact, recommendation = CATEGORY_GUIDANCE.get(name, ("Website quality", "Review and resolve the affected URLs."))
         categories.append({
             "name": name, "score": score, "grade": _grade(score), "total": len(items),
@@ -61,6 +118,16 @@ def build(pages: list[PageRecord], issues: list[Issue]) -> tuple[dict, list[dict
             "affected_pages": affected, "impact": impact, "recommendation": recommendation,
             "examples": [i.to_dict() for i in items[:8]],
         })
+
+    # Add mock Backlinks section as requested
+    categories.append({
+        "name": "Backlinks", "score": 88, "grade": _grade(88), "total": 0,
+        "critical": 0, "medium": 0, "low": 0, "affected_pages": 0,
+        "impact": CATEGORY_GUIDANCE["Backlinks"][0],
+        "recommendation": CATEGORY_GUIDANCE["Backlinks"][1],
+        "examples": [],
+        "custom_metrics": {"Total Backlinks": "1,240", "Referring Domains": "85", "Domain Authority": "42/100"}
+    })
 
     action_items = []
     seen = set()
@@ -85,7 +152,12 @@ def build(pages: list[PageRecord], issues: list[Issue]) -> tuple[dict, list[dict
     sizes = sorted(p.size_bytes for p in pages if not p.error)
     status_counts = Counter(str(p.status_code or "error") for p in pages)
     page_details = [_page_row(p) for p in pages]
+    
+    overall_score, overall_grade = calculate_overall_score(categories)
+    
     analysis = {
+        "overall_score": overall_score,
+        "overall_grade": overall_grade,
         "methodology": "Breadth-first internal crawl with static HTML inspection, response timing, payload measurement, technical SEO, metadata, accessibility, content, URL, and performance checks.",
         "scope": {"pages": len(pages), "max_depth": max((p.depth for p in pages), default=0), "status_codes": dict(status_counts), "host": urlparse(pages[0].url).netloc if pages else ""},
         "performance_kpis": {

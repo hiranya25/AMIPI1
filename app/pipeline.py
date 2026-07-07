@@ -11,14 +11,16 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from app.audits import alt_tags, broken_links, metadata, performance, seo_checks, security
 from app.config import settings
 from app.crawler import WebsiteCrawler
-from app.audits import broken_links, metadata, alt_tags, seo_checks, performance, comprehensive
+from app.audits import comprehensive
 from app.detailed_analysis import build as build_detailed_analysis
 from app.ai_analysis import analyze
+from app.ai_remediation import enrich_issues_with_remediation
 from app.report_generator import generate
 from app.email_service import send_report
-from app.issue_diff import compute_diff, _load_previous_report
+from app.issue_diff import compute_diff, _load_previous_reports
 from app.models import AuditResult
 
 logger = logging.getLogger("pipeline")
@@ -28,8 +30,8 @@ def run_full_audit(send_email: bool = True) -> AuditResult:
     started_at = datetime.now(timezone.utc).isoformat()
     logger.info("Starting audit for %s", settings.SITE_BASE_URL)
 
-    # 0. Load previous report BEFORE we overwrite latest.json
-    previous_report = _load_previous_report()
+    # 0. Load previous reports BEFORE we overwrite latest.json
+    previous_reports = _load_previous_reports()
 
     # 1. Crawl
     crawler = WebsiteCrawler()
@@ -38,12 +40,16 @@ def run_full_audit(send_email: bool = True) -> AuditResult:
 
     # 2. Run all audit modules
     issues = []
-    issues += broken_links.run(pages, check_outbound_links=False)
+    issues += broken_links.run(pages, check_outbound_links=True)
     issues += metadata.run(pages)
     issues += alt_tags.run(pages)
     issues += seo_checks.run(pages, base_url=settings.SITE_BASE_URL)
     issues += performance.run(pages)
     issues += comprehensive.run(pages)
+    issues += security.run(pages)
+
+    # 3. Enrich with AI-generated or cached "how to fix" text
+    issues = enrich_issues_with_remediation(issues)
 
     result = AuditResult(
         site=settings.SITE_BASE_URL,
@@ -65,7 +71,7 @@ def run_full_audit(send_email: bool = True) -> AuditResult:
 
     # 4. Compute issue diff (fixed / new / critical)
     issue_dicts = [i.to_dict() for i in issues]
-    diff = compute_diff(issue_dicts, previous_report)
+    diff = compute_diff(issue_dicts, previous_reports)
 
     # 5. Generate report (HTML + JSON, saved to REPORTS_DIR)
     report = generate(result, diff=diff)

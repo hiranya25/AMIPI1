@@ -20,21 +20,24 @@ def run(pages: list[PageRecord]) -> list[Issue]:
         soup = BeautifulSoup(page.html, "lxml")
         images = soup.find_all("img")
         missing = [img for img in images if not img.get("alt", "").strip()]
-
+        
+        src = "(no src)"
         for img in missing:
             src = img.get("src") or img.get("data-src") or "(no src)"
             issues.append(Issue(
                 category="ALT Tags",
+                issue_type="missing_alt_attribute",
                 severity="low",
                 page_url=page.url,
                 message="Image missing ALT attribute",
                 details=src,
             ))
 
-        if images and len(missing) == len(images):
+        if images and len(missing) == len(images) and len(images) > 0:
             issues.append(Issue(
                 category="ALT Tags",
-                severity="medium",
+                issue_type="all_images_missing_alt",
+                severity="medium" if src and any(x in src.lower() for x in [".png", ".jpg", ".jpeg", ".webp"]) else "low",
                 page_url=page.url,
                 message=f"All {len(images)} images on this page are missing ALT attributes",
             ))

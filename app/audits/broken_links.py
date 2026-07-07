@@ -16,23 +16,27 @@ from app.models import PageRecord, Issue
 _checked_cache: dict[str, int | None] = {}
 
 
-def _check_status(url: str) -> int | None:
+import time
+
+def _check_status(url: str, retry: bool = True) -> int | None:
     if url in _checked_cache:
         return _checked_cache[url]
     try:
         resp = requests.head(
-            url, timeout=settings.REQUEST_TIMEOUT, allow_redirects=True,
-            headers={"User-Agent": settings.USER_AGENT},
+            url, timeout=5, allow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
         )
-        # Some servers reject HEAD; fall back to GET.
         if resp.status_code >= 400:
             resp = requests.get(
-                url, timeout=settings.REQUEST_TIMEOUT, allow_redirects=True,
-                headers={"User-Agent": settings.USER_AGENT}, stream=True,
+                url, timeout=5, allow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}, stream=True,
             )
         _checked_cache[url] = resp.status_code
         return resp.status_code
     except requests.RequestException:
+        if retry:
+            time.sleep(1)
+            return _check_status(url, retry=False)
         _checked_cache[url] = None
         return None
 
@@ -45,6 +49,7 @@ def run(pages: list[PageRecord], check_outbound_links: bool = True) -> list[Issu
         if page.error:
             issues.append(Issue(
                 category="Broken Links",
+                issue_type="broken_internal_link",
                 severity="critical",
                 page_url=page.url,
                 message="Page failed to load",
@@ -53,6 +58,7 @@ def run(pages: list[PageRecord], check_outbound_links: bool = True) -> list[Issu
         elif page.status_code and page.status_code >= 400:
             issues.append(Issue(
                 category="Broken Links",
+                issue_type="broken_internal_link",
                 severity="critical" if page.status_code >= 500 else "medium",
                 page_url=page.url,
                 message=f"Page returned HTTP {page.status_code}",
@@ -60,6 +66,8 @@ def run(pages: list[PageRecord], check_outbound_links: bool = True) -> list[Issu
 
     # 2. Links referenced on each page (checked with HEAD/GET, deduplicated via cache).
     if check_outbound_links:
+        # Collect references: target_url -> (tag_type, set(source_page_urls))
+        outbound_refs: dict[str, tuple[str, set[str]]] = {}
         for page in pages:
             if not page.html:
                 continue
@@ -71,13 +79,28 @@ def run(pages: list[PageRecord], check_outbound_links: bool = True) -> list[Issu
                         continue
                     if not target.startswith("http"):
                         continue  # normalization/dedup for relative URLs is handled by the crawler pass
-                    status = _check_status(target)
-                    if status is None or status >= 400:
-                        issues.append(Issue(
-                            category="Broken Links",
-                            severity="medium",
-                            page_url=page.url,
-                            message=f"Broken resource ({tag}): {'no response' if status is None else f'HTTP {status}'}",
-                            details=target,
-                        ))
+                    
+                    if target not in outbound_refs:
+                        outbound_refs[target] = (tag, set())
+                    outbound_refs[target][1].add(page.url)
+
+        for target, (tag, source_pages) in outbound_refs.items():
+            status = _check_status(target)
+            if status is None or status >= 400:
+                is_anti_bot = status in (403, 429)
+                severity = "low" if is_anti_bot else "medium"
+                issue_type = "external_link_blocked" if is_anti_bot else "broken_external_link"
+                
+                status_str = f"HTTP {status} (Anti-Bot/Access Denied)" if is_anti_bot else ('no response' if status is None else f'HTTP {status}')
+                
+                # Report one finding per URL, listing the number of affected pages
+                issues.append(Issue(
+                    category="Broken Links",
+                    issue_type=issue_type,
+                    severity=severity,
+                    page_url=list(source_pages)[0],  # Give the first affected page as reference
+                    message=f"Broken resource ({tag}): {status_str}",
+                    details=f"Target: {target} (Found on {len(source_pages)} pages)",
+                ))
+
     return issues
