@@ -55,11 +55,15 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Playwright is required for PDF generation (and optionally JS crawling)
-playwright install chromium
+playwright install --with-deps chromium
 
 cp .env.example .env
 # edit .env: set AI_API_KEY, SMTP_*, EMAIL_RECIPIENTS, etc.
 ```
+
+## Deployment
+
+We have prepared a comprehensive step-by-step deployment guide! See [deploy.md](deploy.md) for instructions on how to host this application on a Linux VPS (DigitalOcean, Hetzner, AWS) or for free on Render using Docker.
 
 ## Run
 
@@ -108,7 +112,3 @@ python3 -m app.pipeline
 - The dashboard polls `/audit/status/{job_id}` every 2s while a run is in
   progress; a full amipi.com crawl (~40+ pages) will typically finish in
   under a minute.
-- Tested end-to-end (crawl → audits → AI fallback → report → dashboard
-  render) against a local mock site; not yet run against the live
-  amipi.com domain (needs real network access + a filled-in `.env`).
-
