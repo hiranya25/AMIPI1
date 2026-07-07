@@ -24,9 +24,8 @@ from app.models import Issue
 
 logger = logging.getLogger("ai_analysis")
 
-SYSTEM_PROMPT = """You are a senior website-health analyst. You will be given a JSON list of
-raw technical findings (broken links, SEO/metadata issues, missing ALT tags, performance issues)
-from an automated website crawl. Your job:
+SYSTEM_PROMPT = """You are a senior technical SEO and web performance expert.
+Analyze the following website health audit.
 
 1. Write a 3-4 sentence plain-English executive summary a non-technical manager can understand.
 2. Re-check the severity of each issue category is reasonable (critical / medium / low).
@@ -60,7 +59,7 @@ def analyze(issues: list[Issue], site: str, pages_crawled: int) -> dict | None:
     Returns a dict (see SYSTEM_PROMPT schema) or falls back to rule-based summary."""
     client = _client()
     if client is None:
-        return _fallback_summary(issues, pages_crawled)
+        return _fallback_summary(issues, pages_crawled, site)
 
     # Group by issue_type to keep the payload strictly minimal and avoid context limits
     by_issue_type = {}
@@ -117,11 +116,11 @@ def analyze(issues: list[Issue], site: str, pages_crawled: int) -> dict | None:
                 time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s
             else:
                 logger.error("AI analysis exhausted retries. Falling back to rule-based.")
-                return _fallback_summary(issues, pages_crawled)
+                return _fallback_summary(issues, pages_crawled, site)
 
 
 
-def _fallback_summary(issues: list[Issue], pages_crawled: int) -> dict:
+def _fallback_summary(issues: list[Issue], pages_crawled: int, site: str) -> dict:
     """Rule-based summary used if the AI call is unavailable/fails,
     so the pipeline (and weekly email) never breaks."""
     from app.detailed_analysis import CATEGORY_GUIDANCE
@@ -149,12 +148,13 @@ def _fallback_summary(issues: list[Issue], pages_crawled: int) -> dict:
         if len(top_priorities) >= 8:
             break
 
+    unique_issue_count = len({i.issue_type for i in issues})
+    
     return {
-        "executive_summary": (
-            f"Crawled {pages_crawled} pages and found {len(issues)} issues "
-            f"({counts['critical']} critical, {counts['medium']} medium, {counts['low']} low). "
-            "AI summarization was unavailable for this run, so this is a rule-based summary."
-        ),
-        "overall_health_score": score,
+        "executive_summary": f"The crawl analyzed {pages_crawled} pages and identified {unique_issue_count} distinct issues "
+                             f"across {len(issues)} total page instances. "
+                             f"{counts['critical']} findings are critical. "
+                             f"Address the top priorities to improve stability and UX.",
+        "overall_health_score": str(score),
         "top_priorities": top_priorities,
     }

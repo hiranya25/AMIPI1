@@ -30,7 +30,7 @@ class Settings:
     REQUEST_TIMEOUT: int = int(os.getenv("REQUEST_TIMEOUT", "15"))
     USER_AGENT: str = os.getenv(
         "USER_AGENT",
-        "AIWebsiteHealthMonitor/1.0 (+internal audit bot; contact: hiranya@amipi.com)",
+        "AIWebsiteHealthMonitor/1.0 (+internal audit bot; contact: hiranya10@gmail.com)",
     )
 
     # ---- AI API (NVIDIA Nemotron) ----
@@ -48,6 +48,7 @@ class Settings:
 
     # ---- Scheduler ----
     WEEKLY_CRON: str = os.getenv("WEEKLY_CRON", "0 6 * * MON")
+    SCHEDULER_TEST_MODE: bool = _get_bool("SCHEDULER_TEST_MODE", False)
 
     # ---- Storage ----
     REPORTS_DIR: str = os.getenv("REPORTS_DIR", "reports")

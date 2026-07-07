@@ -105,7 +105,7 @@ def latest_report_html():
 import datetime
 from fastapi.responses import FileResponse
 from app.pdf_generator import html_to_pdf
-from app.email_service import send_report_with_pdf
+from app.email_service import send_report_with_attachments
 
 @app.get("/audit/latest/pdf")
 def latest_report_pdf():
@@ -145,7 +145,7 @@ def trigger_email():
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
     subject = f"{date_str} Amipi Health Check"
     
-    success = send_report_with_pdf(html_body, subject, pdf_path)
+    success = send_report_with_attachments(html_body, subject, [pdf_path])
     if success:
         return {"status": "sent"}
     else:

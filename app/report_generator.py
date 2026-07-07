@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.config import settings
-from app.models import AuditResult
+from app.models import AuditResult, group_issue_dicts
 
 _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 _env = Environment(
@@ -83,6 +83,14 @@ def generate(result: AuditResult, diff: dict | None = None) -> dict:
     
     csv_filename = os.path.basename(csv_path)
 
+    diff_grouped = {
+        "has_previous": diff.get("has_previous", False),
+        "fixed": group_issue_dicts(diff.get("fixed", [])),
+        "new": group_issue_dicts(diff.get("new", [])),
+        "persisting": group_issue_dicts(diff.get("persisting", [])),
+        "critical": group_issue_dicts(diff.get("critical", [])),
+    }
+
     template = _env.get_template("report.html")
     html = template.render(
         result=result,
@@ -90,7 +98,7 @@ def generate(result: AuditResult, diff: dict | None = None) -> dict:
                                           "overall_health_score": "N/A", "top_priorities": []},
         counts=result.issue_counts_by_severity(),
         grouped=result.grouped_issues_by_category(),
-        diff=diff,
+        diff=diff_grouped,
         csv_filename=csv_filename,
     )
 

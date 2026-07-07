@@ -204,7 +204,7 @@ async function runAudit() {
   }
 }
 
-function pollJob(jobId, intervalMs = 2000, timeoutMs = 15 * 60 * 1000) {
+function pollJob(jobId, intervalMs = 2000, timeoutMs = 30 * 60 * 1000) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
     const tick = async () => {

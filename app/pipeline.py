@@ -19,7 +19,8 @@ from app.detailed_analysis import build as build_detailed_analysis
 from app.ai_analysis import analyze
 from app.ai_remediation import enrich_issues_with_remediation
 from app.report_generator import generate
-from app.email_service import send_report
+from app.email_service import send_report_with_attachments
+from app.pdf_generator import html_to_pdf
 from app.issue_diff import compute_diff, _load_previous_reports
 from app.models import AuditResult
 
@@ -80,7 +81,20 @@ def run_full_audit(send_email: bool = True) -> AuditResult:
     # 5. Email delivery
     if send_email:
         subject = f"Weekly Website Health Report — {settings.SITE_BASE_URL} ({datetime.now().strftime('%b %d, %Y')})"
-        send_report(report["html"], subject=subject)
+        attachments = []
+        
+        pdf_path = report["html_path"].replace(".html", ".pdf")
+        try:
+            logger.info("Generating PDF attachment...")
+            html_to_pdf(report["html_path"], pdf_path)
+            attachments.append(pdf_path)
+        except Exception as e:
+            logger.error("Failed to generate PDF for email: %s", e)
+
+        if "csv_path" in report and report["csv_path"]:
+            attachments.append(report["csv_path"])
+
+        send_report_with_attachments(report["html"], subject=subject, attachments=attachments)
 
     return result
 

@@ -138,3 +138,54 @@ class AuditResult:
             "analysis": self.analysis,
             "page_details": self.page_details,
         }
+
+def group_issue_dicts(issues: list[dict]) -> list[dict]:
+    """Groups raw issue dictionaries by (category, issue_type) and aggregates URL variants."""
+    grouped = {}
+    for issue in issues:
+        cat = issue.get("category", "")
+        itype = issue.get("issue_type") or issue.get("message", "")
+        
+        key = (cat, itype)
+        if key not in grouped:
+            grouped[key] = {
+                "severity": issue.get("severity", "low"),
+                "category": cat,
+                "message": issue.get("message", ""),
+                "how_to_fix": issue.get("how_to_fix", ""),
+                "details": issue.get("details", ""),
+                "base_urls": {}
+            }
+        
+        url = issue.get("page_url", "")
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        
+        base_group = grouped[key]["base_urls"]
+        if base_url not in base_group:
+            base_group[base_url] = set()
+        base_group[base_url].add(url)
+
+    result = []
+    for data in grouped.values():
+        total_urls = sum(len(urls) for urls in data["base_urls"].values())
+        example_bases = list(data["base_urls"].keys())[:5]
+        sample_urls = []
+        for base in example_bases:
+            variants = len(data["base_urls"][base])
+            if variants > 1:
+                sample_urls.append(f"{base} (and {variants-1} variant{'s' if variants > 2 else ''})")
+            else:
+                sample_urls.append(base)
+                
+        result.append({
+            "severity": data["severity"],
+            "category": data["category"],
+            "message": data["message"],
+            "how_to_fix": data["how_to_fix"],
+            "details": data["details"],
+            "total_affected": total_urls,
+            "sample_urls": sample_urls
+        })
+        
+    return sorted(result, key=lambda i: (0 if i["severity"]=="critical" else 1 if i["severity"]=="medium" else 2, i["category"]))
