@@ -218,7 +218,9 @@
         <tbody>
           {% for issue in grouped[cat.name] %}
           <tr>
-            <td><span class="badge {{ issue.severity }}">{{ issue.severity }}</span></td>
+            <td><span class="badge {{ issue.severity }}">{{ issue.severity }}</span>
+              <div style="margin-top:4px; font-size:9px; color:#64748b; text-transform:uppercase;">Viewport: {{ issue.viewport|default('all') }}</div>
+            </td>
             <td><strong>{{ issue.total_affected }}</strong></td>
             <td class="small">
               <strong>{{ issue.message }}</strong>{% if issue.details %}<br><span style="color:#64748b;">{{ issue.details }}</span>{% endif %}
@@ -238,20 +240,336 @@
   </section>
 
   <section class="page-break">
-    <h2>9. Performance Analysis</h2>
-    <div class="metrics"><div class="metric"><b>{{ result.analysis.performance_kpis.average_response_ms }}ms</b><span>Average response</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.median_response_ms }}ms</b><span>Median response</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.p95_response_ms }}ms</b><span>95th percentile</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.slow_pages }}</b><span>Pages ≥1 second</span></div></div>
-    <div class="metrics"><div class="metric"><b>{{ result.analysis.performance_kpis.average_page_kb }}KB</b><span>Average HTML payload</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.largest_page_kb }}KB</b><span>Largest HTML payload</span></div><div class="metric"><b>{{ result.stats.broken_pages }}</b><span>Failed page responses</span></div><div class="metric"><b>{{ result.analysis.scope.status_codes }}</b><span>Status distribution</span></div></div>
-    <div class="note"><strong>Interpretation:</strong> These are crawl-time response and HTML transfer measurements. They provide broad site coverage but are deliberately not presented as Core Web Vitals. Browser metrics such as LCP, CLS, INP, and TBT require a Lighthouse or Chrome UX measurement.</div>
+    <h2>9. Real Core Web Vitals (Lighthouse Lab Data)</h2>
+    <p>Browser-rendered metrics from Google PageSpeed Insights for the homepage ({{ result.site }}).</p>
+    {% if result.lab_metrics and (result.lab_metrics.desktop or result.lab_metrics.mobile) %}
+      <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+        {% for viewport, data in result.lab_metrics.items() %}
+          {% if data %}
+          <div style="flex: 1; min-width: 300px; background: var(--wash); border: 1px solid var(--line); border-radius: 8px; padding: 20px;">
+            <h3 style="margin-top: 0; text-transform: capitalize; border-bottom: 2px solid var(--blue); padding-bottom: 10px;">{{ viewport }} Performance</h3>
+            {% if data.error %}
+            <div class="note" style="border-left-color: var(--red); background: #fee4e2; color: var(--red);">
+              <strong>Failed to obtain {{ viewport }} lab data:</strong> {{ data.error }}
+            </div>
+            {% else %}
+            <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 20px;">
+              <div class="score" style="width: 80px; height: 80px; border-width: 8px; border-color: {% if data.score >= 90 %}var(--green){% elif data.score >= 50 %}var(--amber){% else %}var(--red){% endif %};">
+                <b style="font-size: 24px;">{{ data.score|int }}</b>
+              </div>
+              <div><strong>Performance Score</strong></div>
+            </div>
+            <div class="metrics" style="grid-template-columns: 1fr 1fr; margin: 0; gap: 8px;">
+              <div class="metric" style="padding: 10px; background: #fff;"><b>{{ data.LCP.value }}</b><span>LCP</span></div>
+              <div class="metric" style="padding: 10px; background: #fff;"><b>{{ data.INP.value }}</b><span>INP</span></div>
+              <div class="metric" style="padding: 10px; background: #fff;"><b>{{ data.CLS.value }}</b><span>CLS</span></div>
+              <div class="metric" style="padding: 10px; background: #fff;"><b>{{ data.TBT.value }}</b><span>TBT</span></div>
+              <div class="metric" style="padding: 10px; background: #fff;"><b>{{ data.SpeedIndex.value }}</b><span>Speed Index</span></div>
+              <div class="metric" style="padding: 10px; background: #fff;"><b>{{ data.FCP.value }}</b><span>FCP</span></div>
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="note"><strong>Lighthouse lab data not available.</strong> PageSpeed Insights API key was not configured or the request failed.</div>
+    {% endif %}
   </section>
 
   <section class="page-break">
-    <h2>10. Complete Findings Inventory (Export)</h2>
+    <h2>10. Crawl-Time Performance Analysis</h2>
+    <div class="metrics"><div class="metric"><b>{{ result.stats.avg_response_time_ms_desktop }}ms</b><span>Avg desktop response</span></div><div class="metric"><b>{{ result.stats.avg_response_time_ms_mobile }}ms</b><span>Avg mobile response</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.slow_pages }}</b><span>Pages ≥1 second</span></div><div class="metric"><b>{{ result.stats.broken_pages }}</b><span>Failed page responses</span></div></div>
+    <div class="metrics"><div class="metric"><b>{{ result.analysis.performance_kpis.average_page_kb }}KB</b><span>Average HTML payload</span></div><div class="metric"><b>{{ result.analysis.performance_kpis.largest_page_kb }}KB</b><span>Largest HTML payload</span></div></div>
+    <div class="note"><strong>Interpretation:</strong> These are crawl-time response and HTML transfer measurements across all internal pages. They provide broad site coverage but are deliberately not presented as Core Web Vitals.</div>
+    
+    {% if result.stats.resource_breakdown %}
+    <h3 style="margin-top: 24px;">Homepage Resource Breakdown (Network Waterfall)</h3>
+    <p>Total transfer size by asset type measured via headless browser.</p>
+    <table>
+      <thead><tr><th>Resource Type</th><th>Transfer Size</th><th>GTmetrix / Optimization Savings Estimate</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Scripts (JS)</strong></td><td>{{ (result.stats.resource_breakdown.script / 1024)|round(1) }} KB</td><td class="small">Minifying and deferring unused JS could save up to 30%.</td></tr>
+        <tr><td><strong>Images</strong></td><td>{{ (result.stats.resource_breakdown.image / 1024)|round(1) }} KB</td><td class="small">Converting to WebP/AVIF and proper sizing typically saves 40-60%.</td></tr>
+        <tr><td><strong>Stylesheets (CSS)</strong></td><td>{{ (result.stats.resource_breakdown.stylesheet / 1024)|round(1) }} KB</td><td class="small">Removing unused CSS can save 10-20%.</td></tr>
+        <tr><td><strong>Fonts</strong></td><td>{{ (result.stats.resource_breakdown.font / 1024)|round(1) }} KB</td><td class="small">Using WOFF2 and font-display: swap improves rendering.</td></tr>
+        <tr><td><strong>Documents (HTML)</strong></td><td>{{ (result.stats.resource_breakdown.document / 1024)|round(1) }} KB</td><td class="small">Gzip/Brotli compression usually handles this efficiently.</td></tr>
+        <tr><td><strong>Other / Third-Party</strong></td><td>{{ (result.stats.resource_breakdown.other / 1024)|round(1) }} KB</td><td class="small">Review third-party pixels and embeds.</td></tr>
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  <section class="page-break">
+    <h2>11. Social Profile &amp; Tracking Presence</h2>
+    <p>We scanned the homepage for connected social profiles and essential tracking pixels.</p>
+    {% if result.stats.social_data %}
+    <table>
+      <thead><tr><th>Platform</th><th>Detected?</th><th>Found URL / Details</th></tr></thead>
+      <tbody>
+        {% for platform, data in result.stats.social_data.items() %}
+        <tr>
+          <td><strong>{{ platform }}</strong></td>
+          <td>
+            {% if data.found %}
+              <span class="badge" style="background:#ecfdf5;color:var(--green)">Yes</span>
+            {% else %}
+              <span class="badge" style="background:#fee4e2;color:var(--red)">No</span>
+            {% endif %}
+          </td>
+          <td class="small" style="word-break: break-all;">
+            {% if data.found %}{{ data.url }}{% else %}Not found on homepage{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>No social profile data available.</p>
+    {% endif %}
+  </section>
+
+  <section class="page-break">
+    <h2>12. Technology &amp; Infrastructure</h2>
+    <p>Fingerprinting of the underlying web server, hosting, CMS, and DNS infrastructure.</p>
+    {% if result.stats.tech_data %}
+    <table>
+      <thead><tr><th>Component</th><th>Detected Value</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Web Server</strong></td><td>{{ result.stats.tech_data.web_server }}</td></tr>
+        <tr><td><strong>Hosting IP</strong></td><td>{{ result.stats.tech_data.hosting_ip }}</td></tr>
+        <tr><td><strong>CMS / Generator</strong></td><td>{{ result.stats.tech_data.cms }}</td></tr>
+        <tr><td><strong>Frontend Libraries</strong></td><td>{{ result.stats.tech_data.libraries|join(', ') if result.stats.tech_data.libraries else 'None detected' }}</td></tr>
+        <tr>
+          <td><strong>SPF Record (Email Security)</strong></td>
+          <td style="color: {% if result.stats.tech_data.spf_record %}var(--green){% else %}var(--red){% endif %}; font-weight: bold;">
+            {% if result.stats.tech_data.spf_record %}Configured{% else %}Missing{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td><strong>DMARC Record (Email Security)</strong></td>
+          <td style="color: {% if result.stats.tech_data.dmarc_record %}var(--green){% else %}var(--red){% endif %}; font-weight: bold;">
+            {% if result.stats.tech_data.dmarc_record %}Configured{% else %}Missing{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    {% else %}
+    <p>No technology data available.</p>
+    {% endif %}
+  </section>
+
+  <section class="page-break">
+    <h2>13. Keyword Analysis (Homepage)</h2>
+    <p>Top keywords and phrases extracted from the homepage text, cross-referenced with crucial on-page SEO elements.</p>
+    
+    {% if result.stats.keyword_data %}
+    <div style="display: flex; gap: 40px; flex-wrap: wrap;">
+      
+      <div style="flex: 1; min-width: 300px;">
+        <h3>Top Keywords (Unigrams)</h3>
+        <table>
+          <thead><tr><th>Keyword</th><th>Count</th><th>In Title</th><th>In Desc</th><th>In H1-H6</th></tr></thead>
+          <tbody>
+            {% for item in result.stats.keyword_data.unigrams %}
+            <tr>
+              <td><strong>{{ item.term }}</strong></td>
+              <td>{{ item.count }}</td>
+              <td style="color: {% if item.in_title %}var(--green){% else %}var(--red){% endif %}; font-weight: bold;">{% if item.in_title %}Yes{% else %}No{% endif %}</td>
+              <td style="color: {% if item.in_desc %}var(--green){% else %}var(--red){% endif %}; font-weight: bold;">{% if item.in_desc %}Yes{% else %}No{% endif %}</td>
+              <td style="color: {% if item.in_headings %}var(--green){% else %}var(--red){% endif %}; font-weight: bold;">{% if item.in_headings %}Yes{% else %}No{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div style="flex: 1; min-width: 300px;">
+        <h3>Top Phrases (Bigrams)</h3>
+        <table>
+          <thead><tr><th>Phrase</th><th>Count</th><th>In Title</th><th>In Desc</th><th>In H1-H6</th></tr></thead>
+          <tbody>
+            {% for item in result.stats.keyword_data.bigrams %}
+            <tr>
+              <td><strong>{{ item.term }}</strong></td>
+              <td>{{ item.count }}</td>
+              <td style="color: {% if item.in_title %}var(--green){% else %}var(--red){% endif %}; font-weight: bold;">{% if item.in_title %}Yes{% else %}No{% endif %}</td>
+              <td style="color: {% if item.in_desc %}var(--green){% else %}var(--red){% endif %}; font-weight: bold;">{% if item.in_desc %}Yes{% else %}No{% endif %}</td>
+              <td style="color: {% if item.in_headings %}var(--green){% else %}var(--red){% endif %}; font-weight: bold;">{% if item.in_headings %}Yes{% else %}No{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      
+    </div>
+    {% else %}
+    <p>No keyword data available.</p>
+    {% endif %}
+  </section>
+
+  <section class="page-break">
+    <h2>14. External SEO Data (Backlinks &amp; Traffic)</h2>
+    <p>Off-page SEO metrics that require external search-index data.</p>
+    
+    <div style="display: flex; gap: 40px; flex-wrap: wrap;">
+      
+      <div style="flex: 1; min-width: 300px; background: var(--wash); border: 1px solid var(--line); border-radius: 8px; padding: 20px;">
+        <h3 style="margin-top: 0; border-bottom: 2px solid var(--blue); padding-bottom: 10px;">Detailed Backlink Analysis</h3>
+        {% if result.stats.backlink_data %}
+          <div class="metrics" style="grid-template-columns: 1fr 1fr; margin: 0; gap: 8px;">
+            <div class="metric" style="padding: 10px; background: #fff;"><b>{{ result.stats.backlink_data.total_backlinks }}</b><span>Total Backlinks</span></div>
+            <div class="metric" style="padding: 10px; background: #fff;"><b>{{ result.stats.backlink_data.referring_domains }}</b><span>Referring Domains</span></div>
+          </div>
+          <p class="small" style="color: var(--muted); margin-top: 10px;">Data Source: {{ result.stats.backlink_data.data_source }}</p>
+        {% else %}
+          <div class="note" style="border-left-color: #617086; background: #f4f7fa; color: #344054;">
+            <strong>Out of scope — requires external data provider.</strong>
+            <p style="margin: 4px 0 0;">An SEO API key (e.g., DataForSEO, Ahrefs) must be configured in your environment to fetch backlink counts.</p>
+          </div>
+        {% endif %}
+      </div>
+
+      <div style="flex: 1; min-width: 300px; background: var(--wash); border: 1px solid var(--line); border-radius: 8px; padding: 20px;">
+        <h3 style="margin-top: 0; border-bottom: 2px solid var(--blue); padding-bottom: 10px;">Organic Traffic Trends</h3>
+        {% if result.stats.traffic_data %}
+          <div class="metrics" style="grid-template-columns: 1fr 1fr; margin: 0; gap: 8px;">
+            <div class="metric" style="padding: 10px; background: #fff;"><b>{{ result.stats.traffic_data.estimated_traffic }}</b><span>Monthly Traffic</span></div>
+            <div class="metric" style="padding: 10px; background: #fff;"><b>{{ result.stats.traffic_data.ranking_keywords }}</b><span>Ranking Keywords</span></div>
+          </div>
+          <p class="small" style="color: var(--muted); margin-top: 10px;">Data Source: {{ result.stats.traffic_data.data_source }}</p>
+        {% else %}
+          <div class="note" style="border-left-color: #617086; background: #f4f7fa; color: #344054;">
+            <strong>Out of scope — requires external ranking data.</strong>
+            <p style="margin: 4px 0 0;">An SEO API key must be configured in your environment to pull organic ranking trends.</p>
+          </div>
+        {% endif %}
+      </div>
+      
+    </div>
+  </section>
+
+  <section class="page-break">
+    <h2>Advanced Performance Optimization Opportunities</h2>
+    <p>This section adds Lighthouse and GTmetrix-style performance optimization analysis without changing the existing report scores or findings above.</p>
+    <div class="note"><strong>Data availability:</strong> {{ advanced_performance.data_note }}</div>
+    <div class="metrics">
+      <div class="metric"><b>{{ advanced_performance.counts.critical }}</b><span>Critical opportunities</span></div>
+      <div class="metric"><b>{{ advanced_performance.counts.high }}</b><span>High opportunities</span></div>
+      <div class="metric"><b>{{ advanced_performance.counts.medium }}</b><span>Medium opportunities</span></div>
+      <div class="metric"><b>{{ advanced_performance.counts.data_not_available }}</b><span>Audits unavailable</span></div>
+    </div>
+
+    <h3>Website-wide opportunity summary</h3>
+    <table>
+      <thead><tr><th style="width:10%">Priority</th><th style="width:18%">Opportunity</th><th style="width:18%">Pages Affected</th><th style="width:15%">Estimated Impact</th><th style="width:12%">Savings</th><th>Recommended Fix</th></tr></thead>
+      <tbody>
+        {% for row in advanced_performance.rows %}
+        <tr>
+          <td><strong>{{ row.priority }}</strong></td>
+          <td><strong>{{ row.title }}</strong><br><span class="small">Source: {{ row.source }}</span></td>
+          <td class="small">{{ row.pages_affected }}</td>
+          <td class="small">{{ row.estimated_performance_impact }}</td>
+          <td class="small">Time: {{ row.estimated_time_savings }}<br>Data: {{ row.estimated_size_savings }}<br>Requests: {{ row.estimated_request_savings }}</td>
+          <td class="small">{{ row.recommended_fix }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3>Detailed opportunity analysis</h3>
+    <table>
+      <thead><tr><th style="width:12%">Priority</th><th style="width:16%">Issue</th><th style="width:22%">Description</th><th style="width:20%">Why It Matters</th><th style="width:15%">Expected Improvement</th><th style="width:15%">Difficulty</th></tr></thead>
+      <tbody>
+        {% for row in advanced_performance.rows %}
+        <tr>
+          <td><strong>{{ row.priority }}</strong></td>
+          <td>{{ row.title }}</td>
+          <td class="small">{{ row.description }}</td>
+          <td class="small">{{ row.why_it_matters }}</td>
+          <td class="small">{{ row.expected_improvement }}</td>
+          <td>{{ row.implementation_difficulty }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3>Per-page performance data availability</h3>
+    {% if advanced_performance.page_rows %}
+    <table>
+      <thead><tr><th style="width:36%">Page</th><th style="width:12%">Response</th><th style="width:12%">HTML Size</th><th style="width:16%">Lighthouse Opportunity Data</th><th>Crawl-time Performance Findings</th></tr></thead>
+      <tbody>
+        {% for page in advanced_performance.page_rows %}
+        <tr>
+          <td class="small" style="word-break:break-all;">{{ page.url }}</td>
+          <td>{{ page.response_time_ms }} ms</td>
+          <td>{{ page.size_kb }} KB</td>
+          <td>{{ page.lighthouse_status }}</td>
+          <td class="small">{{ page.performance_findings }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="note"><strong>Data Not Available.</strong> No per-page crawl detail was available for this run.</div>
+    {% endif %}
+  </section>
+
+  <section class="page-break">
+    <h2>GTmetrix Top Issues &amp; Prioritized Recommendations</h2>
+    <p>This table follows the GTmetrix Top Issues style as closely as possible using actual Lighthouse/PageSpeed values when available. GTmetrix-only values are marked as Data Not Available unless a GTmetrix data source is connected.</p>
+    <table>
+      <thead><tr><th style="width:8%">Rank</th><th style="width:18%">Issue Name</th><th style="width:10%">Severity</th><th style="width:16%">Affected Pages</th><th style="width:12%">Time Savings</th><th style="width:12%">Size Savings</th><th style="width:14%">Difficulty</th><th>Expected Gain</th></tr></thead>
+      <tbody>
+        {% for issue in advanced_performance.gtmetrix_rows %}
+        <tr>
+          <td><strong>{{ issue.rank }}</strong></td>
+          <td>{{ issue.issue_name }}</td>
+          <td>{{ issue.severity }}</td>
+          <td class="small">{{ issue.affected_pages }}</td>
+          <td>{{ issue.estimated_time_savings }}</td>
+          <td>{{ issue.estimated_size_savings }}</td>
+          <td>{{ issue.implementation_difficulty }}</td>
+          <td class="small">{{ issue.expected_performance_gain }}</td>
+        </tr>
+        <tr>
+          <td colspan="8" class="small"><strong>GTmetrix recommendation:</strong> {{ issue.recommendation }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="page-break">
+    <h2>Consolidated Optimization Roadmap</h2>
+    <p>Roadmap sorted by priority and measured savings where data is available.</p>
+    <table>
+      <thead><tr><th style="width:10%">Priority</th><th style="width:22%">Optimization</th><th style="width:13%">Time Savings</th><th style="width:13%">Data Savings</th><th style="width:13%">Difficulty</th><th style="width:10%">SEO Impact</th><th style="width:10%">Performance Impact</th><th>Estimated Lighthouse Score Improvement</th></tr></thead>
+      <tbody>
+        {% for item in advanced_performance.roadmap_rows %}
+        <tr>
+          <td><strong>{{ item.priority }}</strong></td>
+          <td>{{ item.optimization }}</td>
+          <td>{{ item.estimated_time_savings }}</td>
+          <td>{{ item.estimated_data_savings }}</td>
+          <td>{{ item.implementation_difficulty }}</td>
+          <td>{{ item.seo_impact }}</td>
+          <td>{{ item.performance_impact }}</td>
+          <td>{{ item.estimated_lighthouse_score_improvement }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="page-break">
+    <h2>15. Complete Findings Inventory (Export)</h2>
     <p>The full list of all <strong>{{ result.issues|length }}</strong> findings across every single URL has been moved to a separate spreadsheet attachment to keep this document concise.</p>
     <p><strong>Full findings ({{ result.issues|length }} rows): see attached <code>{{ csv_filename }}</code></strong></p>
   </section>
 
   <section class="page-break">
-    <h2>11. Methodology &amp; Limitations</h2><p>{{ result.analysis.methodology }}</p><ul class="limitations">{% for item in result.analysis.limitations %}<li>{{ item }}</li>{% endfor %}</ul><p><strong>Run window:</strong> {{ result.started_at }} to {{ result.finished_at }}</p>
+    <h2>16. Methodology &amp; Limitations</h2><p>{{ result.analysis.methodology }}</p><ul class="limitations">{% for item in result.analysis.limitations %}<li>{{ item }}</li>{% endfor %}</ul><p><strong>Run window:</strong> {{ result.started_at }} to {{ result.finished_at }}</p>
   </section>
   <div class="footer">Generated automatically by AI Website Health Monitor · {{ result.site }}</div>
 </main></body></html>

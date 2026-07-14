@@ -61,10 +61,6 @@ cp .env.example .env
 # edit .env: set AI_API_KEY, SMTP_*, EMAIL_RECIPIENTS, etc.
 ```
 
-## Deployment
-
-We have prepared a comprehensive step-by-step deployment guide! See [deploy.md](deploy.md) for instructions on how to host this application on a Linux VPS (DigitalOcean, Hetzner, AWS) or for free on Render using Docker.
-
 ## Run
 
 ```bash

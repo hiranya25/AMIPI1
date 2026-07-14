@@ -1,0 +1,17 @@
+Urgency,Category,Issue,Affected URL,Details,Recommended Action
+CRITICAL,Broken Links,Page failed to load,https://www.amipi.com,"Page.goto: Timeout 15000ms exceeded.
+Call log:
+navigating to ""https://www.amipi.com/"", waiting until ""networkidle""
+","Identify the incorrect URL in your site's code or CMS, then update the link to point to the correct existing page or implement a 301 redirect from the broken URL to the relevant destination. (Context: Page.goto: Timeout 15000ms exceeded.
+Call log:
+navigating to ""https://www.amipi.com/"", waiting until ""networkidle""
+)"
+CRITICAL,Broken Links,Page failed to load,https://www.amipi.com,"Page.goto: Timeout 15000ms exceeded.
+Call log:
+navigating to ""https://www.amipi.com/"", waiting until ""networkidle""
+","Identify the incorrect URL in your site's code or CMS, then update the link to point to the correct existing page or implement a 301 redirect from the broken URL to the relevant destination. (Context: Page.goto: Timeout 15000ms exceeded.
+Call log:
+navigating to ""https://www.amipi.com/"", waiting until ""networkidle""
+)"
+LOW,SEO,Sitemap URL is not declared in robots.txt,https://www.amipi.com/robots.txt,,"Add a ""Sitemap: https://example.com/sitemap.xml"" directive to your robots.txt file, replacing the URL with your actual sitemap location."
+LOW,SEO,Sitemap URL is not declared in robots.txt,https://www.amipi.com/robots.txt,,"Add a ""Sitemap: https://example.com/sitemap.xml"" directive to your robots.txt file, replacing the URL with your actual sitemap location."

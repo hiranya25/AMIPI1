@@ -9,6 +9,8 @@ from __future__ import annotations
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+from collections import Counter
+import re
 
 from app.config import settings
 from app.models import PageRecord, Issue
@@ -22,8 +24,12 @@ def _url_exists(url: str) -> bool:
         return False
 
 
-def run(pages: list[PageRecord], base_url: str) -> list[Issue]:
+def run(pages: list[PageRecord], base_url: str) -> tuple[list[Issue], dict]:
     issues: list[Issue] = []
+    keyword_data = {
+        "unigrams": [],
+        "bigrams": []
+    }
 
     # --- Site-wide checks (run once) ---
     robots_url = urljoin(base_url, "/robots.txt")
@@ -88,4 +94,50 @@ def run(pages: list[PageRecord], base_url: str) -> list[Issue]:
                 details="Consider adding Organization, Product, or BreadcrumbList schema."
             ))
 
-    return issues
+    # --- Keyword Analysis on Homepage ---
+    homepage = next((p for p in pages if p.url == base_url), None)
+    if homepage and homepage.html:
+        soup = BeautifulSoup(homepage.html, "lxml")
+        
+        # Extract tags for cross-referencing
+        title = soup.find("title")
+        title_text = title.get_text(separator=" ", strip=True).lower() if title else ""
+        
+        meta_desc = soup.find("meta", attrs={"name": "description"})
+        desc_text = meta_desc.get("content", "").lower() if meta_desc else ""
+        
+        headings_text = ""
+        for tag in ["h1", "h2", "h3", "h4", "h5", "h6"]:
+            for h in soup.find_all(tag):
+                headings_text += " " + h.get_text(separator=" ", strip=True).lower()
+                
+        # Clean visible text
+        for script in soup(["script", "style", "noscript"]):
+            script.extract()
+        visible_text = soup.get_text(separator=" ", strip=True).lower()
+        
+        # Simple stop words list
+        stop_words = {"the", "and", "a", "to", "of", "in", "i", "is", "that", "it", "on", "you", "this", "for", "but", "with", "are", "have", "be", "at", "or", "as", "was", "so", "if", "out", "not", "we", "your", "can", "our", "all", "more", "about", "us", "from", "by"}
+        
+        words = re.findall(r'\b[a-z]{3,}\b', visible_text)
+        filtered_words = [w for w in words if w not in stop_words]
+        
+        unigram_counts = Counter(filtered_words).most_common(10)
+        
+        # Bigrams
+        bigrams = [f"{filtered_words[i]} {filtered_words[i+1]}" for i in range(len(filtered_words)-1)]
+        bigram_counts = Counter(bigrams).most_common(10)
+        
+        def build_row(term: str, count: int):
+            return {
+                "term": term,
+                "count": count,
+                "in_title": term in title_text,
+                "in_desc": term in desc_text,
+                "in_headings": term in headings_text
+            }
+            
+        keyword_data["unigrams"] = [build_row(term, count) for term, count in unigram_counts]
+        keyword_data["bigrams"] = [build_row(term, count) for term, count in bigram_counts]
+
+    return issues, keyword_data

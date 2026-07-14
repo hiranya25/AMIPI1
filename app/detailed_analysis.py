@@ -21,6 +21,7 @@ CATEGORY_GUIDANCE = {
     "URL Structure": ("Duplicate prevention and crawl efficiency", "Normalize URL casing and slashes, enforce one canonical version, and redirect alternatives."),
     "Security": ("Visitor safety and browser trust", "Remove mixed content and deploy protective response headers after compatibility testing."),
     "Backlinks": ("Domain authority and external trust", "Earn high-quality referring domains and prune toxic backlinks."),
+    "LLM/GEO": ("Generative Engine Optimization", "Add an llms.txt file, ensure Entity schema is present, and make content accessible to non-rendering bots."),
 }
 
 
@@ -119,15 +120,7 @@ def build(pages: list[PageRecord], issues: list[Issue]) -> tuple[dict, list[dict
             "examples": [i.to_dict() for i in items[:8]],
         })
 
-    # Add mock Backlinks section as requested
-    categories.append({
-        "name": "Backlinks", "score": 88, "grade": _grade(88), "total": 0,
-        "critical": 0, "medium": 0, "low": 0, "affected_pages": 0,
-        "impact": CATEGORY_GUIDANCE["Backlinks"][0],
-        "recommendation": CATEGORY_GUIDANCE["Backlinks"][1],
-        "examples": [],
-        "custom_metrics": {"Total Backlinks": "1,240", "Referring Domains": "85", "Domain Authority": "42/100"}
-    })
+    # Mock Backlinks section removed as per requirements.
 
     action_items = []
     seen = set()
@@ -158,7 +151,7 @@ def build(pages: list[PageRecord], issues: list[Issue]) -> tuple[dict, list[dict
     analysis = {
         "overall_score": overall_score,
         "overall_grade": overall_grade,
-        "methodology": "Breadth-first internal crawl with static HTML inspection, response timing, payload measurement, technical SEO, metadata, accessibility, content, URL, and performance checks.",
+        "methodology": "Breadth-first internal crawl with static HTML inspection, response timing, payload measurement, technical SEO, metadata, accessibility, content, URL, and performance checks. Note: Scoring is derived from an internal crawl methodology and is not directly equivalent to third-party audit tool scores.",
         "scope": {"pages": len(pages), "max_depth": max((p.depth for p in pages), default=0), "status_codes": dict(status_counts), "host": urlparse(pages[0].url).netloc if pages else ""},
         "performance_kpis": {
             "average_response_ms": round(sum(times) / len(times), 1) if times else 0,

@@ -46,7 +46,16 @@ def run(pages: list[PageRecord], check_outbound_links: bool = True) -> list[Issu
 
     # 1. Pages that themselves failed to load.
     for page in pages:
-        if page.error:
+        if page.error == "Blocked by robots.txt":
+            issues.append(Issue(
+                category="Broken Links",
+                issue_type="blocked_by_robots_txt",
+                severity="medium",
+                page_url=page.url,
+                message="Crawling blocked by robots.txt",
+                details="This URL cannot be crawled or indexed.",
+            ))
+        elif page.error:
             issues.append(Issue(
                 category="Broken Links",
                 issue_type="broken_internal_link",
@@ -55,17 +64,30 @@ def run(pages: list[PageRecord], check_outbound_links: bool = True) -> list[Issu
                 message="Page failed to load",
                 details=page.error,
             ))
-        elif page.status_code and page.status_code >= 400:
-            issues.append(Issue(
-                category="Broken Links",
-                issue_type="broken_internal_link",
-                severity="critical" if page.status_code >= 500 else "medium",
-                page_url=page.url,
-                message=f"Page returned HTTP {page.status_code}",
-            ))
+        elif page.status_code and page.status_code != 200:
+            if 300 <= page.status_code < 400:
+                issues.append(Issue(
+                    category="Broken Links",
+                    issue_type="redirect_chain",
+                    severity="low",
+                    page_url=page.url,
+                    message=f"Page redirected (HTTP {page.status_code})",
+                ))
+            else:
+                severity = "critical" if page.status_code >= 500 else "medium"
+                issue_type = "access_denied" if page.status_code in (401, 403) else "broken_internal_link"
+                
+                issues.append(Issue(
+                    category="Broken Links",
+                    issue_type=issue_type,
+                    severity=severity,
+                    page_url=page.url,
+                    message=f"Page returned HTTP {page.status_code}",
+                ))
 
     # 2. Links referenced on each page (checked with HEAD/GET, deduplicated via cache).
     if check_outbound_links:
+        import concurrent.futures
         # Collect references: target_url -> (tag_type, set(source_page_urls))
         outbound_refs: dict[str, tuple[str, set[str]]] = {}
         for page in pages:
@@ -84,23 +106,31 @@ def run(pages: list[PageRecord], check_outbound_links: bool = True) -> list[Issu
                         outbound_refs[target] = (tag, set())
                     outbound_refs[target][1].add(page.url)
 
-        for target, (tag, source_pages) in outbound_refs.items():
-            status = _check_status(target)
-            if status is None or status >= 400:
-                is_anti_bot = status in (403, 429)
-                severity = "low" if is_anti_bot else "medium"
-                issue_type = "external_link_blocked" if is_anti_bot else "broken_external_link"
-                
-                status_str = f"HTTP {status} (Anti-Bot/Access Denied)" if is_anti_bot else ('no response' if status is None else f'HTTP {status}')
-                
-                # Report one finding per URL, listing the number of affected pages
-                issues.append(Issue(
-                    category="Broken Links",
-                    issue_type=issue_type,
-                    severity=severity,
-                    page_url=list(source_pages)[0],  # Give the first affected page as reference
-                    message=f"Broken resource ({tag}): {status_str}",
-                    details=f"Target: {target} (Found on {len(source_pages)} pages)",
-                ))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+            future_to_target = {executor.submit(_check_status, target): target for target in outbound_refs.keys()}
+            for future in concurrent.futures.as_completed(future_to_target):
+                target = future_to_target[future]
+                try:
+                    status = future.result()
+                except Exception:
+                    status = None
+
+                if status is None or status >= 400:
+                    tag, source_pages = outbound_refs[target]
+                    is_anti_bot = status in (403, 429)
+                    severity = "low" if is_anti_bot else "medium"
+                    issue_type = "external_link_blocked" if is_anti_bot else "broken_external_link"
+                    
+                    status_str = f"HTTP {status} (Anti-Bot/Access Denied)" if is_anti_bot else ('no response' if status is None else f'HTTP {status}')
+                    
+                    # Report one finding per URL, listing the number of affected pages
+                    issues.append(Issue(
+                        category="Broken Links",
+                        issue_type=issue_type,
+                        severity=severity,
+                        page_url=list(source_pages)[0],  # Give the first affected page as reference
+                        message=f"Broken resource ({tag}): {status_str}",
+                        details=f"Target: {target} (Found on {len(source_pages)} pages)",
+                    ))
 
     return issues

@@ -20,6 +20,7 @@ class PageRecord:
     depth: int = 0
     redirected_from: Optional[str] = None
     error: Optional[str] = None
+    resources: list[dict] = field(default_factory=list)  # Network waterfall resources
 
 
 @dataclass
@@ -32,6 +33,7 @@ class Issue:
     message: str
     details: Optional[str] = None
     how_to_fix: Optional[str] = None
+    viewport: str = "desktop" # "desktop" | "mobile" | "all"
 
     def to_dict(self) -> dict:
         return {
@@ -42,6 +44,7 @@ class Issue:
             "message": self.message,
             "details": self.details,
             "how_to_fix": self.how_to_fix,
+            "viewport": self.viewport,
         }
 
 
@@ -54,6 +57,7 @@ class AuditResult:
     finished_at: str = ""
     issues: list[Issue] = field(default_factory=list)
     stats: dict = field(default_factory=dict)
+    lab_metrics: dict = field(default_factory=dict)  # Lighthouse lab metrics
     ai_summary: Optional[dict] = None
     analysis: dict = field(default_factory=dict)
     page_details: list[dict] = field(default_factory=list)
@@ -80,8 +84,11 @@ class AuditResult:
                     "message": issue.message,
                     "how_to_fix": issue.how_to_fix,
                     "details": issue.details,
+                    "viewports": set(),
                     "base_urls": {} # map of base_url -> set of full urls
                 }
+            
+            grouped[cat][itype]["viewports"].add(issue.viewport)
             
             # Normalize URL for grouping variants
             parsed = urlparse(issue.page_url)
@@ -114,6 +121,7 @@ class AuditResult:
                     "message": data["message"],
                     "how_to_fix": data["how_to_fix"],
                     "details": data["details"],
+                    "viewport": ", ".join(sorted(list(data["viewports"]))),
                     "total_affected": total_urls,
                     "sample_urls": sample_urls
                 })
@@ -132,6 +140,7 @@ class AuditResult:
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "stats": self.stats,
+            "lab_metrics": self.lab_metrics,
             "issue_counts": self.issue_counts_by_severity(),
             "issues": [i.to_dict() for i in self.issues],
             "ai_summary": self.ai_summary,
@@ -154,8 +163,11 @@ def group_issue_dicts(issues: list[dict]) -> list[dict]:
                 "message": issue.get("message", ""),
                 "how_to_fix": issue.get("how_to_fix", ""),
                 "details": issue.get("details", ""),
+                "viewports": set(),
                 "base_urls": {}
             }
+            
+        grouped[key]["viewports"].add(issue.get("viewport", "all"))
         
         url = issue.get("page_url", "")
         parsed = urlparse(url)
@@ -184,6 +196,7 @@ def group_issue_dicts(issues: list[dict]) -> list[dict]:
             "message": data["message"],
             "how_to_fix": data["how_to_fix"],
             "details": data["details"],
+            "viewport": ", ".join(sorted(list(data["viewports"]))),
             "total_affected": total_urls,
             "sample_urls": sample_urls
         })

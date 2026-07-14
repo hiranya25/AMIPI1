@@ -26,7 +26,7 @@ class Settings:
     SITE_BASE_URL: str = os.getenv("SITE_BASE_URL", "https://www.amipi.com").rstrip("/")
     MAX_PAGES: int = int(os.getenv("MAX_PAGES", "200"))
     CRAWL_DELAY_SECONDS: float = float(os.getenv("CRAWL_DELAY_SECONDS", "0.5"))
-    USE_PLAYWRIGHT_FOR_JS: bool = _get_bool("USE_PLAYWRIGHT_FOR_JS", False)
+    USE_PLAYWRIGHT_FOR_JS: bool = _get_bool("USE_PLAYWRIGHT_FOR_JS", True)
     REQUEST_TIMEOUT: int = int(os.getenv("REQUEST_TIMEOUT", "15"))
     USER_AGENT: str = os.getenv(
         "USER_AGENT",
@@ -37,6 +37,12 @@ class Settings:
     AI_API_KEY: str = os.getenv("AI_API_KEY", "")
     AI_API_BASE: str = os.getenv("AI_API_BASE", "https://integrate.api.nvidia.com/v1")
     AI_MODEL: str = os.getenv("AI_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")
+
+    # ---- Google PageSpeed Insights ----
+    PAGESPEED_API_KEY: str = os.getenv("PAGESPEED_API_KEY", "")
+
+    # ---- External SEO Data (Optional) ----
+    SEO_API_KEY: str = os.getenv("SEO_API_KEY", "")
 
     # ---- Email ----
     SMTP_HOST: str = os.getenv("SMTP_HOST", "")
