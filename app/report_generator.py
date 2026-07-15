@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import csv
+import re
 from datetime import datetime, timezone
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -57,6 +58,118 @@ def validate_html(html_str: str):
 
 
 DATA_NOT_AVAILABLE = "Data Not Available"
+
+
+def _csv_recommended_fix(issue) -> str:
+    """Format the existing personalized remediation for spreadsheet export."""
+    base_fix = (issue.how_to_fix or "").strip()
+    if not base_fix:
+        base_fix = (
+            f"On {issue.page_url}, review the detected issue: {issue.message}. "
+            "Exact replacement content is Data Not Available because no remediation text was generated for this finding."
+        )
+
+    if "How to Fix:" in base_fix and "What It Should Be:" in base_fix:
+        return base_fix
+
+    return "\n\n".join([
+        f"How to Fix:\n{_csv_how_to_fix(issue, base_fix)}",
+        f"What It Should Be:\n{_csv_ideal_value(issue, base_fix)}",
+        f"Suggested Replacement:\n{_csv_suggested_replacement(issue, base_fix)}",
+    ])
+
+
+def _csv_how_to_fix(issue, base_fix: str) -> str:
+    issue_type = issue.issue_type
+    if issue_type in {"missing_title", "title_length_incorrect"}:
+        return f"On {issue.page_url}, replace the current title value using the page-specific recommendation already generated: {base_fix}"
+    if issue_type in {"missing_meta_description", "meta_desc_length"}:
+        return f"On {issue.page_url}, update the meta description tag with a unique summary for this page: {base_fix}"
+    if issue_type in {"missing_h1_tag", "multiple_h1_tags", "missing_h2"}:
+        return f"On {issue.page_url}, update the page heading structure so the visible heading hierarchy matches the page topic: {base_fix}"
+    if issue_type in {"missing_alt_attribute", "all_images_missing_alt"}:
+        return f"On {issue.page_url}, update the affected image markup with descriptive ALT text: {base_fix}"
+    if "link" in issue_type or issue_type in {"redirect_chain", "access_denied", "blocked_by_robots_txt"}:
+        return f"On {issue.page_url}, update the affected URL/reference or redirect rule: {base_fix}"
+    if issue.category == "Performance":
+        return f"On {issue.page_url}, optimize the exact resource or page metric identified by the audit: {base_fix}"
+    if issue.category == "Security":
+        return f"On {issue.page_url}, apply the security configuration indicated by the detected value: {base_fix}"
+    if issue.category in {"Social", "Social Metadata"}:
+        return f"On {issue.page_url}, add the missing social profile or metadata value using the page-specific content: {base_fix}"
+    if issue.issue_type in {"missing_structured_data", "missing_entity_schema"}:
+        return f"On {issue.page_url}, add the schema markup generated for this page: {base_fix}"
+    return f"On {issue.page_url}, resolve the detected value shown in this row: {base_fix}"
+
+
+def _csv_ideal_value(issue, base_fix: str) -> str:
+    issue_type = issue.issue_type
+    if issue_type in {"missing_title", "title_length_incorrect"}:
+        return "A unique SEO title close to 50-60 characters, containing the primary page topic and brand."
+    if issue_type in {"missing_meta_description", "meta_desc_length"}:
+        return "A unique meta description within the audit target range of 120-160 characters, ideally around 150-160 characters when the page copy supports it."
+    if issue_type in {"missing_h1_tag", "multiple_h1_tags"}:
+        return "Exactly one descriptive H1 that matches the page's primary topic; supporting section headings should use H2/H3."
+    if issue_type == "missing_h2":
+        return "Descriptive H2 headings that break the page into clear topical sections."
+    if issue_type in {"missing_alt_attribute", "all_images_missing_alt"}:
+        return "Concise, human-readable ALT text describing the specific image; decorative images should use alt=\"\"."
+    if issue_type in {"missing_canonical_tag", "repeated_slashes", "uppercase_url"}:
+        return "An absolute canonical URL for the preferred clean page URL, with duplicate URL variants consolidated."
+    if issue_type in {"broken_internal_link", "broken_external_link", "external_link_blocked", "redirect_chain"}:
+        return "A live destination returning HTTP 200, or a permanent 301 redirect from the old URL to the best matching live URL."
+    if issue_type in {"slow_response_time"}:
+        return "Crawl-time response below 1000ms, with important landing pages ideally below 500ms."
+    if issue_type in {"large_payload_size", "heavy_image_payload"}:
+        return "Page transfer close to 2 MB or less; large images should generally be under 300 KB and served as WebP or AVIF where suitable."
+    if issue_type in {"render_blocking_scripts", "heavy_js_payload", "large_third_party_script"}:
+        return "Only critical scripts should block rendering; non-critical first-party and third-party JavaScript should be deferred, async, reduced, or removed."
+    if issue_type == "high_resource_count":
+        return "A reduced request count using bundled/minified assets, lazy-loaded media, and page-specific scripts."
+    if issue_type in {"missing_robots_txt", "sitemap_not_in_robots"}:
+        return "A valid robots.txt file that includes crawl directives and the exact XML sitemap URL."
+    if issue_type == "missing_sitemap_xml":
+        return "A valid /sitemap.xml containing canonical, crawlable URLs from the site."
+    if issue_type in {"missing_structured_data", "missing_entity_schema"}:
+        return "Valid JSON-LD schema that matches this page's entity, organization, product, or webpage purpose."
+    if issue_type in {"missing_security_headers"}:
+        return "The missing response headers listed in the finding, configured at the server, app, or CDN layer."
+    if issue_type in {"mixed_content", "mixed_content_refs"}:
+        return "Every asset loaded through HTTPS, with no http:// resources on HTTPS pages."
+    if issue.category in {"Social", "Social Metadata"}:
+        return "Verified social profile URLs or page-specific Open Graph/Twitter metadata using the current page title and description."
+    return "A page-specific implementation matching the detected issue, current value, and recommendation text in this row."
+
+
+def _csv_suggested_replacement(issue, base_fix: str) -> str:
+    patterns = [
+        r'Recommended title \(\d+ characters\): "([^"]+)"',
+        r'Recommended replacement \(\d+ characters\): "([^"]+)"',
+        r'Recommended meta description \(\d+ characters\): "([^"]+)"',
+        r'Recommended H1: "([^"]+)"',
+        r'Recommended ALT text: "([^"]+)"',
+        r'Add <meta property="og:title" content="([^"]+)">',
+        r'Add <meta property="og:description" content="([^"]+)">',
+        r'<link rel="canonical" href="([^"]+)">',
+        r'Add this line to robots\.txt: (.+?)(?:\. This|$)',
+        r'Replace the broken destination with ([^,]+)',
+        r'create a 301 redirect from (.+?) to (.+?)(?:\.|$)',
+        r'Configure the web server/CDN to return: (.+?)(?:\.|$)',
+        r'for example (\{"@context":.+\})\. This gives',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, base_fix)
+        if match:
+            if len(match.groups()) == 2:
+                return f"{match.group(1)} -> {match.group(2).strip()}"
+            return match.group(1).strip()
+
+    if issue.details:
+        return (
+            f"Use the exact replacement or target described in the recommendation above for detected value: {issue.details}. "
+            "A standalone replacement value was not available from the crawl data."
+        )
+    return "Exact replacement content is Data Not Available for this issue; use the page-specific steps and ideal value above."
 
 EXTRA_ADVANCED_AUDITS = {
     "cdn-usage": {
@@ -315,7 +428,7 @@ def generate(result: AuditResult, diff: dict | None = None) -> dict:
                 issue.message,
                 issue.page_url,
                 issue.details or "",
-                issue.how_to_fix or ""
+                _csv_recommended_fix(issue)
             ])
             
     # Also write a latest.csv copy

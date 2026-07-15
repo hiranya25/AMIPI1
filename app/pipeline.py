@@ -90,7 +90,7 @@ def run_full_audit(send_email: bool = True) -> AuditResult:
     issues = issues_desktop + issues_mobile
 
     # 3. Enrich with AI-generated or cached "how to fix" text
-    issues = enrich_issues_with_remediation(issues)
+    issues = enrich_issues_with_remediation(issues, pages=all_pages)
 
     # 4. Fetch Lighthouse lab data for homepage
     logger.info("Fetching Lighthouse metrics for base URL...")

@@ -1,7 +1,5 @@
-import pytest
-from app.models import Issue
+from app.models import Issue, PageRecord
 from app.ai_remediation import enrich_issues_with_remediation
-from dataclasses import replace
 
 def test_enrich_issues_reconstruction():
     # Simulate a raw finding dict that contains all the fields, including issue_type
@@ -25,7 +23,46 @@ def test_enrich_issues_reconstruction():
     
     # 3. Confirm it didn't raise and the values are correct
     assert enriched_issue.issue_type == "missing_robots_txt"
-    assert enriched_issue.how_to_fix == "Create a robots.txt file at the root of the domain."
+    assert "https://example.com/robots.txt" in enriched_issue.how_to_fix
+    assert "Sitemap:" in enriched_issue.how_to_fix
     
     # 4. Confirm it doesn't mutate the original
     assert issue.how_to_fix is None
+
+
+def test_enrich_issues_uses_page_specific_context():
+    page = PageRecord(
+        url="https://example.com/about",
+        html="""
+        <html><head><title>About Us</title></head>
+        <body>
+          <h1>Industrial Automation Solutions</h1>
+          <p>Example Company designs control panels, automation systems, and engineering services for manufacturers.</p>
+          <img src="/images/control-panel.jpg">
+        </body></html>
+        """,
+    )
+    title_issue = Issue(
+        category="Metadata",
+        issue_type="title_length_incorrect",
+        severity="low",
+        page_url=page.url,
+        message="Title length is 8 chars (recommended 50-60)",
+        details="About Us",
+    )
+    alt_issue = Issue(
+        category="ALT Tags",
+        issue_type="missing_alt_attribute",
+        severity="low",
+        page_url=page.url,
+        message="Image missing ALT attribute",
+        details="/images/control-panel.jpg",
+    )
+
+    enriched = enrich_issues_with_remediation([title_issue, alt_issue], pages=[page])
+
+    assert "https://example.com/about" in enriched[0].how_to_fix
+    assert "Current title" in enriched[0].how_to_fix
+    assert "Recommended replacement" in enriched[0].how_to_fix
+    assert "/images/control-panel.jpg" in enriched[1].how_to_fix
+    assert "Recommended ALT text" in enriched[1].how_to_fix
