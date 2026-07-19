@@ -1,4 +1,5 @@
 from app.models import Issue, PageRecord
+from app import ai_remediation
 from app.ai_remediation import enrich_issues_with_remediation
 
 def test_enrich_issues_reconstruction():
@@ -66,3 +67,37 @@ def test_enrich_issues_uses_page_specific_context():
     assert "Recommended replacement" in enriched[0].how_to_fix
     assert "/images/control-panel.jpg" in enriched[1].how_to_fix
     assert "Recommended ALT text" in enriched[1].how_to_fix
+
+
+def test_enrich_issues_reuses_page_context(monkeypatch):
+    page = PageRecord(url="https://example.com/about", html="<html><body><h1>About</h1></body></html>")
+    issues = [
+        Issue(
+            category="Metadata",
+            issue_type="missing_meta_description",
+            severity="medium",
+            page_url=page.url,
+            message="Missing meta description",
+        ),
+        Issue(
+            category="SEO",
+            issue_type="missing_canonical_tag",
+            severity="medium",
+            page_url=page.url,
+            message="Missing canonical tag",
+        ),
+    ]
+
+    original = ai_remediation._extract_context
+    calls = []
+
+    def counted_extract_context(*args, **kwargs):
+        calls.append(args[1])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(ai_remediation, "_extract_context", counted_extract_context)
+
+    enriched = enrich_issues_with_remediation(issues, pages=[page])
+
+    assert len(enriched) == 2
+    assert len(calls) == 1

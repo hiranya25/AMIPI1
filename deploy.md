@@ -1,193 +1,494 @@
-# Deployment Guide: AI Website Health Monitor
+# Deploy on InMotion cPanel
 
-This guide provides step-by-step instructions for deploying the AI Website Health Monitor (FastAPI + Playwright + Static Frontend) to a production Linux server (e.g., Ubuntu 22.04 on AWS, DigitalOcean, or Linode).
+This guide deploys the AI Website Health Monitor on InMotion cPanel using
+Passenger / Setup Python App.
 
-## Prerequisites
-- A Linux server (Ubuntu 20.04/22.04 recommended)
-- Python 3.10 or higher installed
-- Root or sudo access
+The app is FastAPI, but cPanel runs Python web apps through Passenger as WSGI.
+This repo already includes the adapter:
 
----
-
-## 1. Get the Code & Setup Environment
-
-First, SSH into your server, navigate to where you want to host the app (e.g., `/var/www/`), and clone your GitHub repository:
-
-```bash
-# Example: Navigate to the web directory
-sudo mkdir -p /var/www
-cd /var/www
-
-# Clone your repository from GitHub
-sudo git clone https://github.com/your-username/your-repo-name.git amipi-monitor
-
-# Take ownership of the directory
-sudo chown -R $USER:$USER /var/www/amipi-monitor
-cd amipi-monitor
+```text
+passenger_wsgi.py
+requirements.txt  # includes a2wsgi
 ```
 
-Create a virtual environment and activate it:
-```bash
-python3 -m venv venv
-source venv/bin/activate
+## 1. Recommended Hosting Setup
+
+Use one of these URL layouts:
+
+```text
+https://monitor.yourdomain.com
 ```
 
-## 2. Install Dependencies
+or:
 
-Install the required Python packages from your `requirements.txt`:
-```bash
-pip install -r requirements.txt
+```text
+https://yourdomain.com/monitor
 ```
 
-### Install Playwright Browsers (Crucial for PDF Generation)
-Because the app generates PDF reports using Playwright, you must install the Playwright browsers and their system dependencies:
-```bash
-playwright install --with-deps chromium
+A subdomain is cleaner and usually easier to troubleshoot.
+
+Keep the app outside `public_html`:
+
+```text
+/home/YOUR_CPANEL_USER/amipi-monitor
 ```
 
-## 3. Configure Environment Variables
+Do not upload these local-only folders/files:
 
-Create a `.env` file in the root of the project directory.
-
-```bash
-nano .env
+```text
+venv/
+__pycache__/
+.pytest_cache/
+reports/*.html
+reports/*.json
+reports/*.csv
+reports/*.pdf
 ```
 
-Add your production configuration. Ensure you use your live API keys and correct SMTP details:
+Keep `.env` private on the server. Do not commit or expose it under
+`public_html`.
+
+## 2. Upload The Files
+
+Recommended: create a clean cPanel zip so local `venv/`, caches, reports,
+and the private `.env` file are not uploaded by accident:
+
+```bash
+python scripts/create_cpanel_package.py
+```
+
+Upload and extract:
+
+```text
+dist/amipi-monitor-cpanel.zip
+```
+
+into:
+
+```text
+/home/YOUR_CPANEL_USER/amipi-monitor
+```
+
+Create `.env` separately on the server from the template in this guide.
+
+Make sure these files exist on the server:
+
+```text
+app/
+frontend/
+reports/.gitkeep
+scripts/cpanel_weekly_audit.py
+scripts/verify_playwright.py
+passenger_wsgi.py
+requirements.txt
+.env
+```
+
+Create runtime folders if they do not exist:
+
+```bash
+cd /home/YOUR_CPANEL_USER/amipi-monitor
+mkdir -p reports logs tmp
+```
+
+## 3. Create The Python App In cPanel
+
+In cPanel:
+
+1. Open **Setup Python App**.
+2. Click **Create Application**.
+3. Choose **Python 3.11** or **Python 3.12**.
+4. Set **Application root**:
+
+```text
+amipi-monitor
+```
+
+5. Set **Application URL**:
+
+```text
+monitor.yourdomain.com
+```
+
+or:
+
+```text
+yourdomain.com/monitor
+```
+
+6. Set **Application startup file**:
+
+```text
+passenger_wsgi.py
+```
+
+7. Set **Application Entry point**:
+
+```text
+application
+```
+
+8. Click **Create**.
+
+After cPanel creates the app, copy the virtualenv activation command shown
+inside Setup Python App. It will look similar to:
+
+```bash
+source /home/YOUR_CPANEL_USER/virtualenv/amipi-monitor/3.11/bin/activate
+```
+
+## 4. Install Python Dependencies
+
+Open **cPanel Terminal** and run:
+
+```bash
+cd /home/YOUR_CPANEL_USER/amipi-monitor
+source /home/YOUR_CPANEL_USER/virtualenv/amipi-monitor/3.11/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+If cPanel offers **Run Pip Install** inside Setup Python App, you can use
+that too, but Terminal gives clearer error output.
+
+## 5. Configure `.env`
+
+Create or edit:
+
+```text
+/home/YOUR_CPANEL_USER/amipi-monitor/.env
+```
+
+Use this production template:
 
 ```ini
-# .env
-SITE_BASE_URL=https://amipi.com
-AI_API_KEY=your_nvidia_api_key
-AI_MODEL=nvidia/nemotron-3-ultra-550b-a55b
-AI_API_BASE=https://integrate.api.nvidia.com/v1
+SITE_BASE_URL=https://www.amipi.com
+MAX_PAGES=200
+CRAWL_DELAY_SECONDS=0.5
+USE_PLAYWRIGHT_FOR_JS=false
+REQUEST_TIMEOUT=15
+USER_AGENT=AIWebsiteHealthMonitor/1.0 (+internal audit bot; contact: you@example.com)
 
-# Email Settings (Example using Gmail App Passwords or SendGrid/AWS SES)
+AI_API_KEY=your_nvidia_api_key
+AI_API_BASE=https://integrate.api.nvidia.com/v1
+AI_MODEL=nvidia/nemotron-3-ultra-550b-a55b
+
+PAGESPEED_API_KEY=your_pagespeed_api_key
+
+SEO_API_KEY=your_dataforseo_login:your_dataforseo_password
+DATAFORSEO_LOGIN=
+DATAFORSEO_PASSWORD=
+DATAFORSEO_LOCATION_CODE=2840
+DATAFORSEO_LANGUAGE_CODE=en
+
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
+SMTP_TIMEOUT=120
+SMTP_USE_SSL=false
+SMTP_USE_STARTTLS=true
 SMTP_USERNAME=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
+SMTP_PASSWORD=your_gmail_app_password
 EMAIL_FROM=your_email@gmail.com
-EMAIL_RECIPIENTS=client@example.com, accounts2@amipi.com
+EMAIL_RECIPIENTS=recipient@example.com,another@example.com
+
+# Monday 6:00 AM New York time.
+WEEKLY_CRON=0 6 * * MON
+WEEKLY_CRON_TIMEZONE=America/New_York
+SCHEDULER_TEST_MODE=false
+
+# Shared cPanel often needs this for Chromium.
+PLAYWRIGHT_CHROMIUM_ARGS=--no-sandbox
+
+REPORTS_DIR=reports
 ```
 
-## 4. Test the Application Locally
+For Gmail, use a Gmail **App Password**, not your normal Gmail password.
 
-Before setting up background services, test that the app runs successfully:
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-Open your browser and navigate to `http://your-server-ip:8000`. If the dashboard loads correctly, press `Ctrl+C` to stop the server.
-
----
-
-## 5. Setup Systemd Service (Process Manager)
-
-To ensure the FastAPI application runs continuously in the background and restarts automatically if the server reboots, configure a systemd service.
-
-Create a new service file:
-```bash
-sudo nano /etc/systemd/system/amipi-monitor.service
-```
-
-Add the following configuration (replace `your_username` with your actual Linux user, e.g., `ubuntu` or `root`):
+For InMotion/domain SMTP on port `465`, use SSL instead of STARTTLS:
 
 ```ini
-[Unit]
-Description=Gunicorn instance to serve AI Website Health Monitor
-After=network.target
-
-[Service]
-User=your_username
-Group=www-data
-WorkingDirectory=/var/www/amipi-monitor
-Environment="PATH=/var/www/amipi-monitor/venv/bin"
-# We use Uvicorn directly or Gunicorn with Uvicorn workers
-ExecStart=/var/www/amipi-monitor/venv/bin/uvicorn app.main:app --host 127.0.0.0 --port 8000 --workers 2
-
-[Install]
-WantedBy=multi-user.target
+SMTP_HOST=your_inmotion_mail_host
+SMTP_PORT=465
+SMTP_TIMEOUT=120
+SMTP_USE_SSL=true
+SMTP_USE_STARTTLS=false
+SMTP_USERNAME=your_mailbox@yourdomain.com
+SMTP_PASSWORD=your_mailbox_password
+EMAIL_FROM=your_mailbox@yourdomain.com
 ```
 
-Start and enable the service:
+## 6. Install Playwright Chromium
+
+The dashboard and audits can run without Chromium if `USE_PLAYWRIGHT_FOR_JS=false`,
+but these features need Chromium:
+
+- PDF download
+- email PDF attachment
+- optional JS-rendered crawling
+
+Run this in cPanel Terminal:
+
 ```bash
-sudo systemctl start amipi-monitor
-sudo systemctl enable amipi-monitor
-sudo systemctl status amipi-monitor
+cd /home/YOUR_CPANEL_USER/amipi-monitor
+source /home/YOUR_CPANEL_USER/virtualenv/amipi-monitor/3.11/bin/activate
+python -m playwright install chromium
 ```
 
----
+Then verify Chromium can launch and generate a PDF:
 
-## 6. Set Up Nginx Reverse Proxy (Optional but Highly Recommended)
-
-To serve your application on standard HTTP (port 80) or HTTPS (port 443), use Nginx as a reverse proxy.
-
-Install Nginx:
 ```bash
-sudo apt update
-sudo apt install nginx
+python scripts/verify_playwright.py
 ```
 
-Create a new Nginx configuration file:
+Expected output:
+
+```text
+Playwright Chromium check passed: PDF generation works.
+```
+
+### If Playwright Fails
+
+If `python -m playwright install chromium` fails while downloading, check:
+
+- cPanel Terminal has outbound internet access.
+- The account has enough disk space.
+- The command is running inside the cPanel-created virtualenv.
+
+If `python scripts/verify_playwright.py` fails with missing Linux libraries,
+shared hosting may not provide the system packages Chromium needs. On shared
+cPanel you usually cannot run:
+
 ```bash
-sudo nano /etc/nginx/sites-available/amipi-monitor
+python -m playwright install --with-deps chromium
 ```
 
-Add the following configuration:
+because it needs system-level package installation. Ask InMotion support to
+confirm whether your plan supports Playwright/Chromium. If not, deploy this
+app on an InMotion VPS or other server where you can install system packages.
 
-```nginx
-server {
-    listen 80;
-    server_name your_domain.com; # Replace with your domain or server IP
+If Chromium fails with a sandbox error, keep this in `.env`:
 
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_addrs;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
+```ini
+PLAYWRIGHT_CHROMIUM_ARGS=--no-sandbox
 ```
 
-Enable the site and restart Nginx:
+## 7. Restart The App
+
+From cPanel:
+
+1. Open **Setup Python App**.
+2. Select the app.
+3. Click **Restart**.
+
+Or from Terminal:
+
 ```bash
-sudo ln -s /etc/nginx/sites-available/amipi-monitor /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
+cd /home/YOUR_CPANEL_USER/amipi-monitor
+mkdir -p tmp
+touch tmp/restart.txt
 ```
 
-## 7. Troubleshooting
+## 8. Verify The Web App
 
-- **PDF Generation Fails**: If PDFs are not generating, ensure Playwright dependencies are correctly installed using `playwright install-deps`.
-- **Emails Not Sending**: Check your `SMTP_` variables in `.env`. If using Gmail, ensure you have generated an App Password, as standard passwords no longer work.
-- **Checking Logs**: To see live logs and debugging information, check the systemd logs:
-  ```bash
-  sudo journalctl -u amipi-monitor.service -f
-  ```
+Open:
 
----
+```text
+https://monitor.yourdomain.com/health
+```
 
-## Alternative: Deploy for Free on Render (Docker)
+Expected response:
 
-If you prefer a managed, free platform without configuring Linux yourself, you can deploy to Render using the included `Dockerfile`. Note that **Vercel** is not recommended because of the 50MB function size limit and the inability to run the continuous background schedule required for the weekly audits.
+```json
+{"status":"ok","site":"https://www.amipi.com"}
+```
 
-### Steps to Deploy on Render
-1. Ensure the `Dockerfile` is pushed to your GitHub repository.
-2. Go to [Render.com](https://render.com) and sign up/log in with GitHub.
-3. Click **New +** -> **Web Service**.
-4. Connect your GitHub repository.
-5. In the settings:
-   - **Environment:** Select **Docker** (Render will automatically detect the `Dockerfile`).
-   - **Instance Type:** Select **Free** (512 MB RAM).
-6. Expand **Advanced** and click **Add Environment Variable**. Paste all your variables from your `.env` file (e.g., `AI_API_KEY`, `SMTP_PASSWORD`).
-7. Click **Create Web Service**. 
+Then open:
 
-Render will automatically build the Docker container with the required Playwright headless browsers and give you a free `https://your-app.onrender.com` URL.
+```text
+https://monitor.yourdomain.com
+```
 
-### ⚠️ Free Tier Caveats (Important!)
+Click **Run audit now**.
 
-1. **The Sleeping Server Problem:** Render’s free tier goes to sleep after 15 minutes of inactivity. When the server is asleep, your background scheduler (APScheduler) **stops**, and weekly emails won't send.
-   - **The Fix:** Create a free account at [cron-job.org](https://cron-job.org) and set it up to ping your Render URL (e.g., `https://your-app.onrender.com/health`) every 14 minutes. This tricks Render into staying awake forever.
+After the audit completes, test:
 
-2. **The Memory Problem:** Free tiers max out at **512MB RAM**. Because the app launches a full headless Chrome browser via Playwright to generate PDFs, you may occasionally encounter an Out Of Memory (OOM) error resulting in a crash. If this happens consistently, you will need to upgrade to Render's $7/mo plan or use the VPS method outlined at the beginning of this guide.
+```text
+https://monitor.yourdomain.com/audit/latest
+https://monitor.yourdomain.com/audit/latest/pdf
+```
+
+Then click **Email Report** from the dashboard.
+
+## 9. Add A cPanel Cron Job
+
+The app starts an APScheduler job when Passenger loads it, but shared cPanel
+apps may sleep or restart. For reliable weekly email delivery, add a cPanel
+Cron Job that runs the audit directly.
+
+In cPanel:
+
+1. Open **Cron Jobs**.
+2. Set cron email to your admin email, or leave it blank and redirect output
+   to a log file as shown below.
+3. Add this schedule for Monday 6:00 AM New York time.
+
+The in-app APScheduler uses `WEEKLY_CRON_TIMEZONE=America/New_York`, but cPanel
+cron uses the server timezone. Set the cPanel cron time according to the
+timezone shown in your cPanel account.
+
+If your cPanel server timezone is already New York/Eastern time, use:
+
+```text
+Minute: 0
+Hour: 6
+Day: *
+Month: *
+Weekday: 1
+```
+
+If your cPanel server timezone is UTC, New York changes with daylight saving:
+
+- During Eastern Daylight Time, Monday 6:00 AM New York is Monday 10:00 AM UTC.
+- During Eastern Standard Time, Monday 6:00 AM New York is Monday 11:00 AM UTC.
+
+For EDT, use:
+
+```text
+Minute: 0
+Hour: 10
+Day: *
+Month: *
+Weekday: 1
+```
+
+For EST, use:
+
+```text
+Minute: 0
+Hour: 11
+Day: *
+Month: *
+Weekday: 1
+```
+
+Use this command, replacing `YOUR_CPANEL_USER` and Python version:
+
+```bash
+cd /home/YOUR_CPANEL_USER/amipi-monitor && /home/YOUR_CPANEL_USER/virtualenv/amipi-monitor/3.11/bin/python scripts/cpanel_weekly_audit.py >> /home/YOUR_CPANEL_USER/amipi-monitor/logs/weekly_audit.log 2>&1
+```
+
+The script uses a lock file at:
+
+```text
+reports/.weekly_audit.lock
+```
+
+so a second cron run will skip itself if the previous audit is still running.
+
+### Test The Cron Command Manually
+
+Before saving the cron job, run the same command in Terminal:
+
+```bash
+cd /home/YOUR_CPANEL_USER/amipi-monitor && /home/YOUR_CPANEL_USER/virtualenv/amipi-monitor/3.11/bin/python scripts/cpanel_weekly_audit.py >> /home/YOUR_CPANEL_USER/amipi-monitor/logs/weekly_audit.log 2>&1
+```
+
+Check:
+
+```text
+reports/latest.html
+reports/latest.json
+reports/latest.pdf
+logs/weekly_audit.log
+```
+
+## 10. Optional Keep-Alive Cron
+
+If Passenger sleeps between requests and you want the dashboard to stay warm,
+add a lightweight keep-alive cron every 15 minutes:
+
+```bash
+/usr/bin/curl -fsS https://monitor.yourdomain.com/health > /dev/null 2>&1
+```
+
+This is not a replacement for the weekly audit cron. It only keeps the web
+process warm.
+
+## 11. Deployment Checklist
+
+Before considering the deployment complete:
+
+- `passenger_wsgi.py` exists in the app root.
+- cPanel startup file is `passenger_wsgi.py`.
+- cPanel entry point is `application`.
+- `python -m pip install -r requirements.txt` completed.
+- `.env` exists on the server and contains production secrets.
+- `python -m playwright install chromium` completed.
+- `python scripts/verify_playwright.py` passed.
+- `/health` returns `{"status":"ok", ...}`.
+- Dashboard loads.
+- Manual audit completes.
+- `/audit/latest/pdf` downloads a PDF.
+- Email Report sends successfully.
+- cPanel weekly cron command works when run manually.
+
+## 12. Troubleshooting
+
+### 500 Error On `/audit/latest/pdf`
+
+Run:
+
+```bash
+cd /home/YOUR_CPANEL_USER/amipi-monitor
+source /home/YOUR_CPANEL_USER/virtualenv/amipi-monitor/3.11/bin/activate
+python scripts/verify_playwright.py
+```
+
+If this fails, Chromium is not working on the host.
+
+### Email Fails With `Server not connected`
+
+Check the port/security pairing first:
+
+```ini
+# Port 587
+SMTP_USE_SSL=false
+SMTP_USE_STARTTLS=true
+
+# Port 465
+SMTP_USE_SSL=true
+SMTP_USE_STARTTLS=false
+```
+
+Also keep `SMTP_TIMEOUT=120`. If it still fails, reduce attachments, use your
+domain SMTP server, or ask InMotion whether outbound SMTP is throttled.
+
+### Cron Does Not Run
+
+Use absolute paths in the cron command. cPanel cron does not automatically
+use your Python app virtualenv.
+
+Check:
+
+```text
+/home/YOUR_CPANEL_USER/amipi-monitor/logs/weekly_audit.log
+```
+
+### App Changes Do Not Appear
+
+Restart Passenger:
+
+```bash
+cd /home/YOUR_CPANEL_USER/amipi-monitor
+touch tmp/restart.txt
+```
+
+### Setup Python App Is Missing
+
+Ask InMotion support whether your account/server supports Python apps through
+cPanel Setup Python App / Passenger. If not, use an InMotion VPS.
+
+## References
+
+- cPanel Cron Jobs documentation: https://docs.cpanel.net/cpanel/advanced/cron-jobs/
+- cPanel Passenger Applications documentation: https://docs.cpanel.net/knowledge-base/web-services/using-passenger-applications/

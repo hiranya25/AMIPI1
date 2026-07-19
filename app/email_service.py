@@ -5,8 +5,12 @@ Sends the generated HTML report to EMAIL_RECIPIENTS via SMTP
 (works with Gmail/Outlook/any standard SMTP+STARTTLS provider).
 """
 from __future__ import annotations
-import smtplib
 import logging
+import os
+import smtplib
+import ssl
+import time
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -15,13 +19,27 @@ from app.config import settings
 logger = logging.getLogger("email_service")
 
 
-from email.mime.application import MIMEApplication
-import datetime
-import time
-import os
-
 def send_report(html_body: str, subject: str | None = None) -> bool:
     return send_report_with_attachments(html_body, subject, None)
+
+
+def _open_smtp_connection():
+    context = ssl.create_default_context()
+    if settings.SMTP_USE_SSL:
+        return smtplib.SMTP_SSL(
+            settings.SMTP_HOST,
+            settings.SMTP_PORT,
+            timeout=settings.SMTP_TIMEOUT,
+            context=context,
+        )
+
+    server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=settings.SMTP_TIMEOUT)
+    server.ehlo()
+    if settings.SMTP_USE_STARTTLS:
+        server.starttls(context=context)
+        server.ehlo()
+    return server
+
 
 def send_report_with_attachments(html_body: str, subject: str | None, attachments: list[str] | None) -> bool:
     if not settings.SMTP_HOST or not settings.EMAIL_RECIPIENTS:
@@ -67,9 +85,16 @@ def send_report_with_attachments(html_body: str, subject: str | None, attachment
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         try:
-            logger.info("Sending report email to %s (attempt %d/%d)...", settings.EMAIL_RECIPIENTS, attempt, max_retries)
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as server:
-                server.starttls()
+            logger.info(
+                "Sending report email to %s via %s:%s using %s (attempt %d/%d)...",
+                settings.EMAIL_RECIPIENTS,
+                settings.SMTP_HOST,
+                settings.SMTP_PORT,
+                "SMTP_SSL" if settings.SMTP_USE_SSL else ("STARTTLS" if settings.SMTP_USE_STARTTLS else "plain SMTP"),
+                attempt,
+                max_retries,
+            )
+            with _open_smtp_connection() as server:
                 if settings.SMTP_USERNAME:
                     server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
                 server.sendmail(msg["From"], settings.EMAIL_RECIPIENTS, msg.as_string())

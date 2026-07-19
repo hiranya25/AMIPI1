@@ -11,7 +11,7 @@ const RUNNING_LABELS = [
   "Checking links and metadata…",
   "Scanning for missing ALT tags…",
   "Running SEO and performance checks…",
-  "Asking Groq to prioritize findings…",
+  "Asking Nemotron to prioritize findings...",
 ];
 
 const els = {
@@ -28,6 +28,7 @@ const els = {
   siteTarget: document.getElementById("siteTarget"),
   downloadPdfBtn: document.getElementById("downloadPdfBtn"),
   emailReportBtn: document.getElementById("emailReportBtn"),
+  docsLink: document.getElementById("docsLink"),
 
   scoreNumber: document.getElementById("scoreNumber"),
   execSummary: document.getElementById("execSummary"),
@@ -49,6 +50,20 @@ const els = {
 let currentIssues = [];
 let activeCategory = "all";
 let labelInterval = null;
+
+const APP_BASE_PATH = (() => {
+  const path = window.location.pathname;
+  if (path === "/") return "";
+  if (path.endsWith("/")) return path.slice(0, -1);
+  const lastSegment = path.split("/").pop() || "";
+  if (lastSegment.includes(".")) return path.replace(/\/[^/]*$/, "");
+  return path;
+})();
+
+function apiUrl(path) {
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `${APP_BASE_PATH}${cleanPath}`;
+}
 
 function showOnly(section) {
   [els.emptyState, els.runningState, els.errorState, els.reportSection].forEach((s) => {
@@ -77,7 +92,7 @@ function formatDate(iso) {
 }
 
 async function fetchLatestReport() {
-  const res = await fetch("/audit/latest");
+  const res = await fetch(apiUrl("/audit/latest"));
   if (!res.ok) throw new Error("No report available yet.");
   return res.json();
 }
@@ -185,7 +200,7 @@ async function runAudit() {
   els.runStatus.textContent = "Running…";
 
   try {
-    const startRes = await fetch("/audit/run?send_email=false", { method: "POST" });
+    const startRes = await fetch(apiUrl("/audit/run?send_email=false"), { method: "POST" });
     if (!startRes.ok) throw new Error("Could not start the audit.");
     const { job_id } = await startRes.json();
 
@@ -213,7 +228,7 @@ function pollJob(jobId, intervalMs = 2000, timeoutMs = 30 * 60 * 1000) {
         return;
       }
       try {
-        const res = await fetch(`/audit/status/${jobId}`);
+        const res = await fetch(apiUrl(`/audit/status/${jobId}`));
         if (!res.ok) throw new Error("Lost track of the audit job.");
         const status = await res.json();
         if (status.status === "done") {
@@ -258,7 +273,7 @@ els.retryBtn.addEventListener("click", runAudit);
 
 if (els.downloadPdfBtn) {
   els.downloadPdfBtn.addEventListener("click", () => {
-    window.open("/audit/latest/pdf", "_blank");
+    window.open(apiUrl("/audit/latest/pdf"), "_blank");
   });
 }
 
@@ -269,7 +284,7 @@ if (els.emailReportBtn) {
     btn.textContent = "Sending...";
     btn.disabled = true;
     try {
-      const res = await fetch("/audit/email", { method: "POST" });
+      const res = await fetch(apiUrl("/audit/email"), { method: "POST" });
       if (!res.ok) throw new Error("Failed to send email");
       btn.textContent = "Sent!";
     } catch (err) {
@@ -282,6 +297,10 @@ if (els.emailReportBtn) {
       }, 3000);
     }
   });
+}
+
+if (els.docsLink) {
+  els.docsLink.href = apiUrl("/docs");
 }
 
 (async function init() {

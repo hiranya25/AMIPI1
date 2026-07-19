@@ -9,6 +9,7 @@ scheduler call.
 """
 from __future__ import annotations
 import logging
+import time
 from datetime import datetime, timezone
 
 from app.audits import alt_tags, broken_links, metadata, performance, seo_checks, security, llm_readability
@@ -41,35 +42,61 @@ def run_full_audit(send_email: bool = True) -> AuditResult:
     # 0. Load previous reports BEFORE we overwrite latest.json
     previous_reports = _load_previous_reports()
 
+    def _run_stage(label: str, func):
+        start = time.perf_counter()
+        logger.info("Starting stage: %s", label)
+        result = func()
+        logger.info("Finished stage: %s (%.1fs)", label, time.perf_counter() - start)
+        return result
+
     # Helper to run all audits on a set of pages
-    def _run_audits(pages) -> list:
+    def _run_audits(pages, pass_name: str, check_outbound_links: bool) -> tuple[list, dict]:
+        logger.info(
+            "Running %s audit modules on %d pages (outbound link checks: %s)",
+            pass_name,
+            len(pages),
+            "on" if check_outbound_links else "off",
+        )
         found_issues = []
-        found_issues += broken_links.run(pages, check_outbound_links=True)
-        found_issues += metadata.run(pages)
-        found_issues += alt_tags.run(pages)
+        found_issues += _run_stage(
+            f"{pass_name}: broken links/resources",
+            lambda: broken_links.run(pages, check_outbound_links=check_outbound_links),
+        )
+        found_issues += _run_stage(f"{pass_name}: metadata", lambda: metadata.run(pages))
+        found_issues += _run_stage(f"{pass_name}: alt tags", lambda: alt_tags.run(pages))
         
-        seo_issues, seo_data = seo_checks.run(pages, base_url=settings.SITE_BASE_URL)
+        seo_issues, seo_data = _run_stage(
+            f"{pass_name}: SEO checks",
+            lambda: seo_checks.run(pages, base_url=settings.SITE_BASE_URL),
+        )
         found_issues += seo_issues
         
-        found_issues += performance.run(pages)
-        found_issues += waterfall.run(pages)
-        found_issues += comprehensive.run(pages)
-        found_issues += security.run(pages)
-        found_issues += llm_readability.run(pages, base_url=settings.SITE_BASE_URL)
+        found_issues += _run_stage(f"{pass_name}: performance", lambda: performance.run(pages))
+        found_issues += _run_stage(f"{pass_name}: waterfall", lambda: waterfall.run(pages))
+        found_issues += _run_stage(f"{pass_name}: comprehensive", lambda: comprehensive.run(pages))
+        found_issues += _run_stage(f"{pass_name}: security", lambda: security.run(pages))
+        found_issues += _run_stage(
+            f"{pass_name}: LLM readability",
+            lambda: llm_readability.run(pages, base_url=settings.SITE_BASE_URL),
+        )
         
         # Social run handles its own issues, but we also want the data. 
         # We'll just run it outside this helper for the desktop pass to capture the data.
+        logger.info("%s audit modules produced %d issues.", pass_name, len(found_issues))
         return found_issues, seo_data
 
     # 1. Crawl & Audit (Desktop Pass)
-    crawler_desktop = WebsiteCrawler(viewport="desktop")
-    pages_desktop = crawler_desktop.crawl()
+    pages_desktop = _run_stage("desktop crawl", lambda: WebsiteCrawler(viewport="desktop").crawl())
     logger.info("Crawled %d desktop pages", len(pages_desktop))
-    issues_desktop, keyword_data = _run_audits(pages_desktop)
+    issues_desktop, keyword_data = _run_audits(
+        pages_desktop,
+        pass_name="desktop",
+        check_outbound_links=settings.CHECK_OUTBOUND_LINKS,
+    )
     
     # Run social and tech stack audits only on desktop
-    social_issues, social_data = social.run(pages_desktop)
-    tech_issues, tech_data = tech_stack.run(pages_desktop)
+    social_issues, social_data = _run_stage("desktop: social", lambda: social.run(pages_desktop))
+    tech_issues, tech_data = _run_stage("desktop: tech stack", lambda: tech_stack.run(pages_desktop))
     
     issues_desktop += social_issues
     issues_desktop += tech_issues
@@ -78,10 +105,13 @@ def run_full_audit(send_email: bool = True) -> AuditResult:
         issue.viewport = "desktop"
 
     # 2. Crawl & Audit (Mobile Pass)
-    crawler_mobile = WebsiteCrawler(viewport="mobile")
-    pages_mobile = crawler_mobile.crawl()
+    pages_mobile = _run_stage("mobile crawl", lambda: WebsiteCrawler(viewport="mobile").crawl())
     logger.info("Crawled %d mobile pages", len(pages_mobile))
-    issues_mobile, _ = _run_audits(pages_mobile)
+    issues_mobile, _ = _run_audits(
+        pages_mobile,
+        pass_name="mobile",
+        check_outbound_links=settings.CHECK_OUTBOUND_LINKS and settings.CHECK_OUTBOUND_LINKS_ON_MOBILE,
+    )
     for issue in issues_mobile:
         issue.viewport = "mobile"
 
@@ -90,16 +120,19 @@ def run_full_audit(send_email: bool = True) -> AuditResult:
     issues = issues_desktop + issues_mobile
 
     # 3. Enrich with AI-generated or cached "how to fix" text
-    issues = enrich_issues_with_remediation(issues, pages=all_pages)
+    issues = _run_stage(
+        f"remediation enrichment for {len(issues)} issues",
+        lambda: enrich_issues_with_remediation(issues, pages=all_pages),
+    )
 
     # 4. Fetch Lighthouse lab data for homepage
     logger.info("Fetching Lighthouse metrics for base URL...")
-    lab_metrics = lighthouse.run_for_url(settings.SITE_BASE_URL)
+    lab_metrics = _run_stage("Lighthouse/PageSpeed metrics", lambda: lighthouse.run_for_url(settings.SITE_BASE_URL))
     
     # 5. Fetch External SEO Data (Backlinks & Traffic)
     parsed_domain = urlparse(settings.SITE_BASE_URL).netloc.replace("www.", "")
-    backlink_data = backlinks.fetch_backlink_data(parsed_domain)
-    traffic_data = traffic_trends.fetch_traffic_data(parsed_domain)
+    backlink_data = _run_stage("DataForSEO backlinks", lambda: backlinks.fetch_backlink_data(parsed_domain))
+    traffic_data = _run_stage("DataForSEO traffic trends", lambda: traffic_trends.fetch_traffic_data(parsed_domain))
 
     # Calculate resource breakdown for homepage (desktop)
     resource_breakdown = {"script": 0, "stylesheet": 0, "image": 0, "font": 0, "document": 0, "other": 0}
@@ -171,15 +204,21 @@ def run_full_audit(send_email: bool = True) -> AuditResult:
     )
 
     # 5. AI analysis (NVIDIA Nemotron, with rule-based fallback)
-    result.ai_summary = analyze(issues, site=settings.SITE_BASE_URL, pages_crawled=len(pages_desktop))
-    result.analysis, result.page_details = build_detailed_analysis(pages_desktop, issues)
+    result.ai_summary = _run_stage(
+        "AI executive analysis",
+        lambda: analyze(issues, site=settings.SITE_BASE_URL, pages_crawled=len(pages_desktop)),
+    )
+    result.analysis, result.page_details = _run_stage(
+        "detailed analysis",
+        lambda: build_detailed_analysis(pages_desktop, issues),
+    )
 
     # 4. Compute issue diff (fixed / new / critical)
     issue_dicts = [i.to_dict() for i in issues]
-    diff = compute_diff(issue_dicts, previous_reports)
+    diff = _run_stage("issue diff", lambda: compute_diff(issue_dicts, previous_reports))
 
     # 5. Generate report (HTML + JSON, saved to REPORTS_DIR)
-    report = generate(result, diff=diff)
+    report = _run_stage("report generation", lambda: generate(result, diff=diff))
     logger.info("Report generated: %s", report["html_path"])
 
     # 5. Email delivery

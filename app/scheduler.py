@@ -5,23 +5,40 @@ Uses APScheduler's CronTrigger (parsed from WEEKLY_CRON, default:
 pipeline automatically, so no one has to remember to run it manually.
 """
 from __future__ import annotations
+import fcntl
 import logging
+import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import timezone, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.config import settings
 from app.pipeline import run_full_audit
 
 logger = logging.getLogger("scheduler")
 
-# Run in UTC timezone explicitly to avoid pytz/local tz resolution issues.
-scheduler = BackgroundScheduler(timezone=timezone.utc)
+def _scheduler_timezone():
+    try:
+        return ZoneInfo(settings.WEEKLY_CRON_TIMEZONE)
+    except ZoneInfoNotFoundError:
+        logger.warning("Unknown WEEKLY_CRON_TIMEZONE=%s; falling back to UTC.", settings.WEEKLY_CRON_TIMEZONE)
+        return timezone.utc
+
+
+scheduler = BackgroundScheduler(timezone=_scheduler_timezone())
 
 def _cron_trigger_from_string(cron_str: str) -> CronTrigger:
     minute, hour, day, month, day_of_week = cron_str.split()
-    return CronTrigger(minute=minute, hour=hour, day=day, month=month, day_of_week=day_of_week, timezone=timezone.utc)
+    return CronTrigger(
+        minute=minute,
+        hour=hour,
+        day=day,
+        month=month,
+        day_of_week=day_of_week,
+        timezone=_scheduler_timezone(),
+    )
 
 def _retry_email_only():
     try:
@@ -73,7 +90,16 @@ def _schedule_retry(func):
 def _safe_run_audit():
     try:
         logger.info("Scheduler triggered automatic audit job.")
-        run_full_audit(send_email=True)
+        os.makedirs(settings.REPORTS_DIR, exist_ok=True)
+        lock_path = os.path.join(settings.REPORTS_DIR, ".weekly_audit.lock")
+        with open(lock_path, "w", encoding="utf-8") as lock_file:
+            try:
+                fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                logger.warning("Another scheduled audit is already running; skipping this execution.")
+                return
+
+            run_full_audit(send_email=True)
     except Exception as exc:
         logger.error("Scheduled audit job failed: %s", exc, exc_info=True)
         # If it was ONLY an email failure, just retry the email next time
@@ -84,12 +110,20 @@ def _safe_run_audit():
             _schedule_retry(_safe_run_audit)
 
 def start_scheduler():
+    if scheduler.running:
+        logger.info("Scheduler already running; leaving existing jobs in place.")
+        return
+
     if settings.SCHEDULER_TEST_MODE:
-        trigger = IntervalTrigger(minutes=1, timezone=timezone.utc)
+        trigger = IntervalTrigger(minutes=1, timezone=_scheduler_timezone())
         logger.info("Scheduler started in TESTING MODE (runs every 1 minute).")
     else:
         trigger = _cron_trigger_from_string(settings.WEEKLY_CRON)
-        logger.info("Scheduler started. Weekly audit cron: %s", settings.WEEKLY_CRON)
+        logger.info(
+            "Scheduler started. Weekly audit cron: %s (%s)",
+            settings.WEEKLY_CRON,
+            settings.WEEKLY_CRON_TIMEZONE,
+        )
 
     scheduler.add_job(
         func=_safe_run_audit,

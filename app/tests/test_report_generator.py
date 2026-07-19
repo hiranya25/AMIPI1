@@ -1,8 +1,11 @@
 import pytest
+from app import report_generator
 from app.report_generator import generate
 from app.models import AuditResult, Issue
 
-def test_html_autoescaping_and_sections():
+def test_html_autoescaping_and_sections(tmp_path, monkeypatch):
+    monkeypatch.setattr(report_generator.settings, "REPORTS_DIR", str(tmp_path))
+
     # Setup fixture with known HTML tags in fix-text
     issue = Issue(
         category="Accessibility",
@@ -76,4 +79,4 @@ def test_html_autoescaping_and_sections():
     # 2. Assert all sections are present (not truncated mid-render)
     assert "1. Executive Summary" in html
     assert "7. Prioritized Remediation Plan" in html
-    assert "12. Methodology &amp; Limitations" in html
+    assert "16. Methodology &amp; Limitations" in html

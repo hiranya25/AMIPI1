@@ -1,44 +1,46 @@
-"""
-Organic Traffic & Ranking Trends (Stub)
----------------------------------------
-Checks for an external API key. If not present, returns a flag so the report
-can display the "Out of scope" message.
-"""
+"""Organic traffic and ranking trends using DataForSEO Labs."""
 from __future__ import annotations
 import logging
 from app.config import settings
+from app.audits import dataforseo
 
 logger = logging.getLogger("traffic_trends")
 
-import requests
+def _to_int(value) -> int:
+    if value in (None, ""):
+        return 0
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _parse_domain_rank_response(data: dict | None) -> dict | None:
+    result = dataforseo.first_result(data)
+    items = result.get("items") or []
+    if not items or not isinstance(items[0], dict):
+        return None
+
+    metrics = items[0].get("metrics") or {}
+    organic = metrics.get("organic") or {}
+    return {
+        "estimated_traffic": _to_int(organic.get("etv")),
+        "ranking_keywords": _to_int(organic.get("count")),
+        "data_source": "DataForSEO Labs Google (US)",
+    }
 
 def fetch_traffic_data(domain: str) -> dict | None:
-    api_key = getattr(settings, "SEO_API_KEY", "")
-    
-    if not api_key:
-        return None
-        
-    try:
-        url = "https://api.seranking.com/v1/domain/overview/db"
-        headers = {
-            "Authorization": f"Token {api_key}",
-            "Content-Type": "application/json"
-        }
-        # Using 'us' as default database, can be configurable
-        params = {"domain": domain, "source": "us"}
-        
-        resp = requests.get(url, headers=headers, params=params, timeout=15)
-        if resp.status_code == 200:
-            data = resp.json()
-            organic = data.get("organic", {})
-            return {
-                "estimated_traffic": int(organic.get("traffic_sum", 0)),
-                "ranking_keywords": organic.get("keywords_count", 0),
-                "data_source": "SE Ranking (US)"
-            }
-        else:
-            logger.warning(f"SE Ranking Traffic API error: {resp.status_code}")
-    except Exception as e:
-        logger.error(f"Failed to fetch traffic data: {e}")
-        
-    return None
+    target = dataforseo.normalize_domain(domain)
+    data = dataforseo.post(
+        "/dataforseo_labs/google/domain_rank_overview/live",
+        {
+            "target": target,
+            "location_code": settings.DATAFORSEO_LOCATION_CODE,
+            "language_code": settings.DATAFORSEO_LANGUAGE_CODE,
+            "limit": 1,
+        },
+    )
+    traffic_data = _parse_domain_rank_response(data)
+    if data and traffic_data is None:
+        logger.warning("DataForSEO Labs API returned an unexpected response shape")
+    return traffic_data

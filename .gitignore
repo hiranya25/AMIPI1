@@ -4,5 +4,10 @@ __pycache__/
 .env
 reports/*.html
 reports/*.json
+reports/*.csv
+reports/*.pdf
 !reports/.gitkeep
+logs/*.log
+!logs/.gitkeep
+dist/
 .DS_Store

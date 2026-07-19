@@ -1,17 +1,12 @@
-import requests
+from dotenv import load_dotenv
 
-api_key = "5cea06e8-2065-09e9-09f4-10ac50da9693"
-domain = "amipi.com"
+from app.audits.backlinks import fetch_backlink_data
+from app.audits.traffic_trends import fetch_traffic_data
 
-# Backlinks
-url1 = "https://api.seranking.com/v1/backlinks/summary"
-headers = {"Authorization": f"Token {api_key}"}
-resp1 = requests.get(url1, headers=headers, params={"target": domain})
-print("Backlinks Status:", resp1.status_code)
-print("Backlinks JSON:", resp1.text[:500])
+load_dotenv()
 
-# Traffic
-url2 = "https://api.seranking.com/v1/domain/overview/db"
-resp2 = requests.get(url2, headers=headers, params={"domain": domain, "source": "us"})
-print("Traffic Status:", resp2.status_code)
-print("Traffic JSON:", resp2.text[:500])
+
+if __name__ == "__main__":
+    domain = "amipi.com"
+    print("Backlinks:", fetch_backlink_data(domain))
+    print("Traffic:", fetch_traffic_data(domain))

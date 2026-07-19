@@ -529,16 +529,16 @@ def _deterministic_fix(issue: Issue, ctx: PageContext, page: Optional[PageRecord
 
     if issue_type in {"missing_robots_txt", "missing_sitemap_xml", "sitemap_not_in_robots", "missing_llms_txt"}:
         if issue_type == "missing_robots_txt":
-            robots = urljoin(settings.SITE_BASE_URL, "/robots.txt")
-            sitemap = urljoin(settings.SITE_BASE_URL, "/sitemap.xml")
+            robots = urljoin(url, "/robots.txt")
+            sitemap = urljoin(url, "/sitemap.xml")
             return f"{robots} is missing or inaccessible. Create it with at least: User-agent: *; Allow: /; Sitemap: {sitemap}. This helps crawlers discover allowed sections and the XML sitemap."
         if issue_type == "missing_sitemap_xml":
-            sitemap = urljoin(settings.SITE_BASE_URL, "/sitemap.xml")
+            sitemap = urljoin(url, "/sitemap.xml")
             return f"{sitemap} is missing or inaccessible. Generate an XML sitemap containing the canonical crawlable URLs found in this audit and submit that exact URL in Search Console."
         if issue_type == "sitemap_not_in_robots":
-            sitemap = urljoin(settings.SITE_BASE_URL, "/sitemap.xml")
+            sitemap = urljoin(url, "/sitemap.xml")
             return f"{url} exists but does not declare the sitemap. Add this line to robots.txt: Sitemap: {sitemap}. This gives crawlers a direct route to the canonical URL inventory."
-        llms = urljoin(settings.SITE_BASE_URL, "/llms.txt")
+        llms = urljoin(url, "/llms.txt")
         return f"{llms} is missing. Create an llms.txt file summarizing the site, priority pages, products/services, and preferred citation context so AI crawlers can understand the business without relying only on rendered pages."
 
     if issue_type in {"missing_structured_data", "missing_entity_schema"}:
@@ -704,11 +704,22 @@ def enrich_issues_with_remediation(
     cache = _load_cache()
     updated_cache = False
     pages_by_url, known_urls = _build_page_index(pages)
+    context_cache: dict[str, PageContext] = {}
     enriched: list[Issue] = []
+    total = len(issues)
 
-    for issue in issues:
+    logger.info("Starting remediation enrichment for %d issues.", total)
+
+    for idx, issue in enumerate(issues, start=1):
+        if idx == 1 or idx % 250 == 0 or idx == total:
+            logger.info("Remediation enrichment progress: %d/%d issues", idx, total)
+
         page = _page_for_issue(issue, pages_by_url)
-        ctx = _extract_context(page, issue.page_url)
+        context_key = _normalize_url(page.url if page else issue.page_url)
+        ctx = context_cache.get(context_key)
+        if ctx is None:
+            ctx = _extract_context(page, issue.page_url)
+            context_cache[context_key] = ctx
 
         fix_text = _deterministic_fix(issue, ctx, page, known_urls)
         if not fix_text:
@@ -733,4 +744,5 @@ def enrich_issues_with_remediation(
     if updated_cache:
         _save_cache(cache)
 
+    logger.info("Finished remediation enrichment for %d issues.", total)
     return enriched

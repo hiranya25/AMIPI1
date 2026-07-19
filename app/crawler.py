@@ -97,7 +97,10 @@ class WebsiteCrawler:
         try:
             if self._playwright_ctx is None:
                 self._pw = sync_playwright().start()
-                self._browser = self._pw.chromium.launch(headless=True)
+                self._browser = self._pw.chromium.launch(
+                    headless=True,
+                    args=settings.PLAYWRIGHT_CHROMIUM_ARGS,
+                )
                 self._playwright_ctx = self._browser.new_context(
                     user_agent=self.user_agent,
                     viewport={"width": 375, "height": 667} if self.viewport == "mobile" else {"width": 1280, "height": 720},

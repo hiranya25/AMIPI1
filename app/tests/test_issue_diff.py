@@ -61,14 +61,7 @@ def test_compute_diff():
     assert len(diff_result["new"]) == 1    # The products page performance
     assert len(diff_result["persisting"]) == 1 # The about page meta description
     
-    # Ensure zero overlap
-    fixed_set = set(diff_result["fixed"])
-    new_set = set(diff_result["new"])
-    persisting_set = set(diff_result["persisting"])
-    
-    # Note: dicts are unhashable, so we check ids or unique combinations
-    # Since these are different lists, we can just ensure the counts are exact
-    # But let's check intersection by URL + category
+    # Ensure zero overlap by URL. Issue dicts themselves are not hashable.
     assert not set(fixed_urls).intersection(set(new_urls))
     assert not set(fixed_urls).intersection(set(persisting_urls))
     assert not set(new_urls).intersection(set(persisting_urls))

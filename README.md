@@ -11,11 +11,15 @@ Ubersuggest, and Screaming Frog by hand.
   origin (no build step, no framework — open `uvicorn app.main:app` and go)
 - **Crawler:** `requests` + `BeautifulSoup` (static HTML), optional
   Playwright fallback for JS-rendered pages (`USE_PLAYWRIGHT_FOR_JS=true`)
+- **Outbound link/resource checks:** enabled on desktop by default; skipped on
+  the mobile pass by default to avoid duplicating slow network checks.
 - **PDF Generation:** `playwright` (Chromium) used for generating PDF reports on the fly
 - **AI analysis:** NVIDIA Nemotron API (`nvidia/nemotron-3-ultra-550b-a55b`)
   via OpenAI-compatible streaming API. Handles reasoning tokens and parses JSON output.
-- **Scheduler:** APScheduler (weekly cron, default Monday 6:00 AM)
-- **Email:** stdlib `smtplib` (works with Gmail/Outlook/any SMTP+STARTTLS)
+- **External SEO data:** DataForSEO REST API for backlink counts and organic
+  traffic/ranking keyword estimates
+- **Scheduler:** APScheduler (weekly cron, default Monday 6:00 AM New York time)
+- **Email:** stdlib `smtplib` (works with Gmail/Outlook/any SMTP SSL or STARTTLS server)
 
 ## Project layout
 ```
@@ -44,6 +48,12 @@ frontend/
   app.js               fetch + poll the API, render findings, filter by category
 reports/             generated reports land here (latest.html / latest.json / latest.pdf)
 requirements.txt
+requirements-dev.txt test runner dependencies
+passenger_wsgi.py    cPanel/Passenger entrypoint for FastAPI via a2wsgi
+scripts/
+  cpanel_weekly_audit.py  cron-safe scheduled audit runner
+  create_cpanel_package.py creates a clean cPanel upload zip
+  verify_playwright.py    verifies Chromium PDF generation on the host
 .env.example         copy to .env and fill in your values
 ```
 
@@ -61,6 +71,26 @@ cp .env.example .env
 # edit .env: set AI_API_KEY, SMTP_*, EMAIL_RECIPIENTS, etc.
 ```
 
+For DataForSEO, use the REST API credentials from
+`https://app.dataforseo.com/api-access`. Set either a `login:password` value:
+
+```ini
+SEO_API_KEY=your_dataforseo_login:your_dataforseo_password
+```
+
+or the Base64 Basic token DataForSEO provides:
+
+```ini
+SEO_API_KEY=your_base64_basic_token
+```
+
+or, if you prefer separate secret fields:
+
+```ini
+DATAFORSEO_LOGIN=your_dataforseo_login
+DATAFORSEO_PASSWORD=your_dataforseo_password
+```
+
 ## Run
 
 ```bash
@@ -72,7 +102,7 @@ empty state ("No scan on record yet"); click **Run audit now** to crawl the
 site, run all five audit modules, get the AI summary, and see the report
 render live (health score, severity counts, top priorities, and a
 filterable findings table). The weekly scheduler also starts automatically
-with the app (cron controlled by `WEEKLY_CRON` in `.env`), so reports keep
+with the app (cron controlled by `WEEKLY_CRON` and `WEEKLY_CRON_TIMEZONE` in `.env`), so reports keep
 flowing without opening the dashboard.
 
 API docs (Swagger UI) are at **http://localhost:8000/docs**.
@@ -93,6 +123,36 @@ curl -X POST "http://localhost:8000/audit/email"    # explicitly triggers the em
 ```bash
 python3 -m app.pipeline
 ```
+
+## Test
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q
+python -m compileall -q app test_api.py
+```
+
+## Production readiness
+
+**Status: ready to deploy after production secrets are rotated and configured.**
+
+Last checked: 2026-07-17.
+
+Validated locally:
+- FastAPI imports and `/health` returns `200 OK`
+- Python compile check passes for `app/` and `test_api.py`
+- Test suite passes: `9 passed`
+- cPanel Passenger entrypoint is included as `passenger_wsgi.py`
+- Source scan found no hard-coded live credentials outside ignored local environment files
+
+Pre-live checklist:
+- Rotate any API keys or SMTP app passwords that were shared outside secure secret storage.
+- Set production values through `.env` or the hosting provider's secret manager; do not commit `.env`.
+- Install Playwright Chromium on the host with `playwright install --with-deps chromium`.
+- Put the app behind HTTPS, ideally with Nginx or a managed platform reverse proxy.
+- Confirm `WEEKLY_CRON=0 6 * * MON` and `WEEKLY_CRON_TIMEZONE=America/New_York` for Monday 6:00 AM New York time.
+- Deploy on cPanel with `passenger_wsgi.py` and entry point `application`, or on a VPS with `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
+- After deployment, check `/health`, run one manual audit with `send_email=false`, then trigger `/audit/email` to confirm PDF generation and email delivery.
 
 ## Notes / current limitations
 - **AI analysis has a safe fallback:** if `AI_API_KEY` is unset or the
